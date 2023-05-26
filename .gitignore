@@ -13,7 +13,8 @@
 *-Ex.R
 
 # Output files from R CMD build
-/*.tar.gz
+# et1902: disable to save necessary files for installation in repo
+# /*.tar.gz
 
 # Output files from R CMD check
 /*.Rcheck/
