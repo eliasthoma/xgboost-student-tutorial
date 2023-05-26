@@ -1,18 +1,20 @@
+---
+title: "Student Tutorial for XGBoost"
+---
 
 
-
-https://xgboost.readthedocs.io/en/stable/
+XGBoost-Docs: https://xgboost.readthedocs.io/en/stable/
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-```{r eval=FALSE}
+```{r Setup from Cran, eval=FALSE, include=FALSE}
 install.packages("xgboost")
 ```
 
-```{r Setup for GPU Acceleration eval=False}
+```{r Manuall setup for GPU acceleration, eval=FALSE, include=FALSE}
 # Check if r is in path
 system("where R")
 # TODO: Add r to session path here if not found else you have to edit you user profile path settings in windows and add r manually
