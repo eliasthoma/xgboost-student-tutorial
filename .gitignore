@@ -48,3 +48,6 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# et1902: Don't track download data of terra::geodata
+data/

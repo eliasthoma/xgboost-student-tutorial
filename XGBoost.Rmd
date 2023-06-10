@@ -1,32 +1,97 @@
 ---
-title: "Student Tutorial for XGBoost"
+title: "Tutorial: Using XGBoost for Species-Distribution-Modelling"
 ---
-
-
-XGBoost-Docs: https://xgboost.readthedocs.io/en/stable/
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+# Species Distribution Modeling
 
-```{r Setup from Cran, eval=FALSE, include=FALSE}
+
+# Extreme Gradient Boosting Algorithem
+
+
+# Application: XGBoost
+
+
+## Prerequisites
+
+Install XGBoost
+XGBoost-Docs: https://xgboost.readthedocs.io/en/stable/
+
+```{r Setup from Cran, eval=FALSE, include=TRUE}
 install.packages("xgboost")
 ```
 
-```{r Manuall setup for GPU acceleration, eval=FALSE, include=FALSE}
+```{r Manuall setup for GPU acceleration, eval=FALSE, include=TRUE}
 # Check if r is in path
 system("where R")
-# TODO: Add r to session path here if not found else you have to edit you user profile path settings in windows and add r manually
+# TODO: Add r to session path here if not found else you have to edit your user profile path settings in windows and add r manually
 # Install dependencies
 system('R -q -e "install.packages(c(\'data.table\', \'jsonlite\'))"')
 # Install XGBoost
 system(paste("R CMD INSTALL ", getwd(),  "/xgboost_r_gpu_win64_21d95f3d8f23873a76f8afaad0fee5fa3e00eafe.tar.gz", sep=""))
 ```
 
+
 ```{r}
 require(xgboost)
+require(terra)
+require(geodata)
+```
+
+## Preparing data
+
+Species Occurrences data from ...
+
+```{r perparing species data}
+
+species_occurrences = read.table("data/PakistanLadakh.csv", sep = ",", header = TRUE)
+head(species_occurrences)
+#str(species_occurrences)
+
+species_occurences=dplyr::filter(species_occurrences, species=="Aglais_caschmirensis")
+species_occurrences=sf::st_as_sf(species_occurrences, coords=c("x", "y"), remove=F, crs=sf::st_crs("epsg:4326"))
+plot(species_occurrences)
 
 ```
 
+Environmental data used for modelling
+
+Using the package geodata to obtain environmental data of pakistan. The ISO country code for pakistan can be found by using geodata::country_codes(query = 'Pakistan')
+
+```{r preparing environmental data}
+border <- geodata::gadm(country='PAK', level=0, path='./data')
+
+worldclim = geodata::worldclim_country(country="PAK", res=10, var="bio", path="data/", version = "2.1")
+#names(worldclim)<-substr(names(environmental), 11, 20)
+# mask to border of Pakistan
+worldclim = terra::mask(worldclim, border)
+#terra::writeRaster(r, "data/bioclim.tif", overwrite=T)
+
+elevation = geodata::elevation_30s(country='PAK', path='data/')
+
+
+
+plot(border)
+plot(worldclim)
+plot(elevation)
+```
+
+Extract environmental data for presence and absence points
+
+```{r}
+species_presence = terra::extract(worldclim,species_occurrences)
+# species_absence = terra::extract(worldclim,background_points)
+
+head(species_presence)
+```
+
+Splitting the data into test and verfication dataset
+
+
+## Training the model
+
+## Model results
 
