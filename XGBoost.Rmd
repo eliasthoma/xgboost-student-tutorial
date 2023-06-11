@@ -72,8 +72,6 @@ worldclim = terra::mask(worldclim, border)
 
 elevation = geodata::elevation_30s(country='PAK', path='data/')
 
-
-
 plot(border)
 plot(worldclim)
 plot(elevation)
