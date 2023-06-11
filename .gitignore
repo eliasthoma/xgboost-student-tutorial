@@ -51,3 +51,6 @@ rsconnect/
 
 # et1902: Don't track download data of terra::geodata
 data/
+
+# er1902: Ignore rmarkdown html since it will be produced by the github action
+*.html

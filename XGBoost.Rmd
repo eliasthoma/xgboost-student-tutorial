@@ -81,9 +81,12 @@ Extract environmental data for presence and absence points
 
 ```{r}
 species_presence = terra::extract(worldclim,species_occurrences)
+head(species_presence)
+
+# background_points = 
 # species_absence = terra::extract(worldclim,background_points)
 
-head(species_presence)
+
 ```
 
 Splitting the data into test and verfication dataset
