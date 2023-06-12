@@ -5,6 +5,12 @@ title: "Tutorial: Using XGBoost for Species-Distribution-Modelling"
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+# Dummy notes area
+
+https://juliasilge.com/blog/baseball-racing/
+XGBoost-Docs: https://xgboost.readthedocs.io/en/stable/
+https://dieghernan.github.io/tidyterra/reference/geom_spatraster.html
+
 
 # Species Distribution Modeling
 
@@ -17,13 +23,19 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Prerequisites
 
+
+```{r Install packages, eval=FALSE}
+install.packages('tidyverse')
+install.packages("ggplot2")
+install.packages('tidyterra')
+```
+
 Install XGBoost
-XGBoost-Docs: https://xgboost.readthedocs.io/en/stable/
 
 ```{r Setup from Cran, eval=FALSE, include=TRUE}
 install.packages("xgboost")
 ```
-
+To use GPU acceleration you need to install a prebuild binary:
 ```{r Manuall setup for GPU acceleration, eval=FALSE, include=TRUE}
 # Check if r is in path
 system("where R")
@@ -39,6 +51,11 @@ system(paste("R CMD INSTALL ", getwd(),  "/xgboost_r_gpu_win64_21d95f3d8f23873a7
 require(xgboost)
 require(terra)
 require(geodata)
+
+require(dplyr)
+require(tidyverse)
+require(ggplot2)
+require(tidyterra)
 ```
 
 ## Preparing data
@@ -48,13 +65,13 @@ Species Occurrences data from ...
 ```{r perparing species data}
 
 species_occurrences = read.table("data/PakistanLadakh.csv", sep = ",", header = TRUE)
+
+# TODO: select species to modell
+species_occurrences=dplyr::filter(species_occurrences, species=="Aglais_caschmirensis")
+species_occurrences=sf::st_as_sf(species_occurrences, coords=c("x", "y"), remove=T, crs=sf::st_crs("epsg:4326"))
+
 head(species_occurrences)
 #str(species_occurrences)
-
-species_occurences=dplyr::filter(species_occurrences, species=="Aglais_caschmirensis")
-species_occurrences=sf::st_as_sf(species_occurrences, coords=c("x", "y"), remove=F, crs=sf::st_crs("epsg:4326"))
-plot(species_occurrences)
-
 ```
 
 Environmental data used for modelling
@@ -64,29 +81,43 @@ Using the package geodata to obtain environmental data of pakistan. The ISO coun
 ```{r preparing environmental data}
 border <- geodata::gadm(country='PAK', level=0, path='./data')
 
+# TODO: rename layers to more readable names 
 worldclim = geodata::worldclim_country(country="PAK", res=10, var="bio", path="data/", version = "2.1")
-#names(worldclim)<-substr(names(environmental), 11, 20)
+
 # mask to border of Pakistan
 worldclim = terra::mask(worldclim, border)
 #terra::writeRaster(r, "data/bioclim.tif", overwrite=T)
 
 elevation = geodata::elevation_30s(country='PAK', path='data/')
 
-plot(border)
-plot(worldclim)
-plot(elevation)
+#plot(border)
+#plot(worldclim)
+#plot(elevation)
+
+ggplot() + 
+  geom_spatraster(data = elevation) + 
+  scale_fill_hypso_c() + 
+  geom_sf(data = sf::st_as_sf(border), mapping=aes(alpha = 0), show.legend = FALSE) + 
+  geom_sf(data = species_occurrences, mapping = aes(colour = species) );
 ```
 
 Extract environmental data for presence and absence points
 
+occurrence will be the predictive variable
+
 ```{r}
 species_presence = terra::extract(worldclim,species_occurrences)
-head(species_presence)
+species_presence = cbind(species_presence, occurrence = c(1))
+#head(species_presence)
+str(species_presence)
+#summary(species_presence)
 
+#TODO: generate distributed background points with col 'occurrence' = 0
 # background_points = 
 # species_absence = terra::extract(worldclim,background_points)
 
 
+#TODO: bind presence and absence points into one dataframe and plot some variables, see https://juliasilge.com/blog/baseball-racing/
 ```
 
 Splitting the data into test and verfication dataset
