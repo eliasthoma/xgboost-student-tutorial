@@ -15,19 +15,26 @@ https://dieghernan.github.io/tidyterra/reference/geom_spatraster.html
 # Species Distribution Modeling
 
 
+
+
 # Extreme Gradient Boosting Algorithem
 
 
-# Application: XGBoost
+
+
+# Application of XGBoost
+
+
 
 
 ## Prerequisites
-
 
 ```{r Install packages, eval=FALSE}
 install.packages('tidyverse')
 install.packages("ggplot2")
 install.packages('tidyterra')
+
+#if(!require(dplyr)){install.packages('dplyr')}
 ```
 
 Install XGBoost
@@ -64,19 +71,22 @@ Species Occurrences data from ...
 
 ```{r perparing species data}
 
-species_occurrences = read.table("data/PakistanLadakh.csv", sep = ",", header = TRUE)
+species_occurrences_all = read.table("data/PakistanLadakh.csv", sep = ",", header = TRUE)
+species_occurrences_all=sf::st_as_sf(species_occurrences_all, coords=c("x", "y"), remove=T, crs=sf::st_crs("epsg:4326"))
 
-# TODO: select species to modell
-species_occurrences=dplyr::filter(species_occurrences, species=="Aglais_caschmirensis")
-species_occurrences=sf::st_as_sf(species_occurrences, coords=c("x", "y"), remove=T, crs=sf::st_crs("epsg:4326"))
+# list of species 
+species_names = (species_occurrences_all %>% distinct(species) %>% select(species))$species
 
-head(species_occurrences)
-#str(species_occurrences)
+# list of species ordered by number of samples:
+species = data.frame(species_occurrences_all) %>% count(species) %>% arrange(desc(n))
+species
 ```
 
 Environmental data used for modelling
 
 Using the package geodata to obtain environmental data of pakistan. The ISO country code for pakistan can be found by using geodata::country_codes(query = 'Pakistan')
+
+Show List of bioclim data variables
 
 ```{r preparing environmental data}
 border <- geodata::gadm(country='PAK', level=0, path='./data')
@@ -89,10 +99,11 @@ worldclim = terra::mask(worldclim, border)
 #terra::writeRaster(r, "data/bioclim.tif", overwrite=T)
 
 elevation = geodata::elevation_30s(country='PAK', path='data/')
+```
 
-#plot(border)
-#plot(worldclim)
-#plot(elevation)
+```{r Plotting into a single map}
+species_occurrences=dplyr::filter(species_occurrences_all, species=="Aglais_caschmirensis")
+head(species_occurrences)
 
 ggplot() + 
   geom_spatraster(data = elevation) + 
@@ -101,29 +112,93 @@ ggplot() +
   geom_sf(data = species_occurrences, mapping = aes(colour = species) );
 ```
 
+```{r Plotting grouped by species into single maps, eval=FALSE, include=FALSE}
+# Filtering for multiple species: 
+species_occurrences = species_occurrences_all %>% filter(species %in% species_names[1:10])
+
+# INFO: genearting the plot takes a lot timee due to the high number of different species
+ggplot(species_occurrences) + 
+  geom_spatraster(data = elevation) + 
+  scale_fill_hypso_c() + 
+  geom_sf(data = sf::st_as_sf(border), mapping=aes(alpha = 0), show.legend = FALSE) + 
+  geom_sf(data = species_occurrences, mapping = aes(colour = species) ) +
+  facet_wrap(facets = vars(species), ncol = 2);
+```
+
+
+
 Extract environmental data for presence and absence points
 
 occurrence will be the predictive variable
 
 ```{r}
-species_presence = terra::extract(worldclim,species_occurrences)
-species_presence = cbind(species_presence, occurrence = c(1))
-#head(species_presence)
-str(species_presence)
-#summary(species_presence)
+# TODO: convert species into logical presence factors
+species_presence = sf::st_as_sf(terra::extract(worldclim,species_occurrences, bind=TRUE))
+tmp = terra::extract(elevation, species_occurrences, bind=FALSE, ID=FALSE)
+species_presence = cbind(species_presence, tmp, occurrence = c(1))
+head(species_presence)
 
-#TODO: generate distributed background points with col 'occurrence' = 0
-# background_points = 
-# species_absence = terra::extract(worldclim,background_points)
+# generate distributed background points with col 'occurrence' = 0
+# TODO: add elevation data
+# TODO: why 1000 points?? give a explanation for the decisison
+background_points = sf::st_sample(sf::st_as_sf(border), size = 1000)
 
+ggplot() + 
+  geom_sf(data = sf::st_as_sf(border), mapping=aes(alpha = 0), show.legend = FALSE) + 
+  geom_sf(data = background_points)
+
+# TODO: more effiecently would be the bind presence and absence points together first and then extract values from raster and elevation
+# TODO: add column species wiht null values
+# Read values from bio
+species_absence = sf::st_as_sf(terra::extract(worldclim, terra::vect(background_points), bind=TRUE))
+tmp = terra::extract(elevation, terra::vect(background_points), bind=FALSE, ID=FALSE)
+tmp2 = data.frame(c(0))
+species_absence = cbind(species_absence, tmp, tmp2, occurrence = c(0)); rm(tmp); rm(tmp2)
+species_absence <- species_absence %>% rename(species = 'c.0.')
+head(species_absence)
 
 #TODO: bind presence and absence points into one dataframe and plot some variables, see https://juliasilge.com/blog/baseball-racing/
+
+# cols have to be identical to rbind data frames together, check this before
+str(species_presence)
+str(species_absence)
+modeling_data_raw = rbind(species_presence, species_absence)
+# check if join was succesfull by head and tail of occurrence column
+head(modeling_data_raw$occurrence); tail(modelling_data$occurrence)
+
+
+out = modeling_data_raw %>% mutate( species = as.numeric(species))
+
 ```
 
 Splitting the data into test and verfication dataset
 
+## Data Overview
+
+```{r}
+modeling_data_raw %>% filter(species == species_names[6]) %>%
+  ggplot(aes(plate_x, plate_z, z = occurrece)) +
+  stat_summary_hex(alpha = 0.8, bins = 10) +
+  scale_fill_viridis_c(labels = species) +
+  labs(fill = "% occurence")
+```
+
+
 
 ## Training the model
 
+Loop over all species and compute individual models
+
+try-catch
+
 ## Model results
 
+Species Richness Map
+
+
+## Conclusion
+
+How was Computing Speed compared to other methods? 
+
+
+print sessioninfo
