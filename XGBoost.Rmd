@@ -10,6 +10,8 @@ knitr::opts_chunk$set(echo = TRUE)
 https://juliasilge.com/blog/baseball-racing/
 XGBoost-Docs: https://xgboost.readthedocs.io/en/stable/
 https://dieghernan.github.io/tidyterra/reference/geom_spatraster.html
+https://www.youtube.com/watch?v=gKyUucJwD8U&list=WL&index=71
+
 
 
 # Species Distribution Modeling
@@ -33,6 +35,8 @@ https://dieghernan.github.io/tidyterra/reference/geom_spatraster.html
 install.packages('tidyverse')
 install.packages("ggplot2")
 install.packages('tidyterra')
+install.packages('fastDummies')
+install.packages('tidymodels')
 
 #if(!require(dplyr)){install.packages('dplyr')}
 ```
@@ -63,6 +67,8 @@ require(dplyr)
 require(tidyverse)
 require(ggplot2)
 require(tidyterra)
+require(fastDummies)
+require(tidymodels)
 ```
 
 ## Preparing data
@@ -92,19 +98,23 @@ Show List of bioclim data variables
 border <- geodata::gadm(country='PAK', level=0, path='./data')
 
 # TODO: rename layers to more readable names 
-worldclim = geodata::worldclim_country(country="PAK", res=10, var="bio", path="data/", version = "2.1")
+worldclim_bio = geodata::worldclim_country(country="PAK", res=10, var="bio", path="data/", version = "2.1")
+names(worldclim_bio)<-substr(names(worldclim_bio), 11, 20)
 
 # mask to border of Pakistan
-worldclim = terra::mask(worldclim, border)
+worldclim = terra::mask(worldclim_bio, border)
 #terra::writeRaster(r, "data/bioclim.tif", overwrite=T)
 
 elevation = geodata::elevation_30s(country='PAK', path='data/')
 ```
 
 ```{r Plotting into a single map}
+species_occurrences = species_occurrences_all
+#species_occurrences = species_occurrences_all %>% filter(species %in% species_names[1:10])
 species_occurrences=dplyr::filter(species_occurrences_all, species=="Aglais_caschmirensis")
 head(species_occurrences)
 
+# TODO: finalize legend
 ggplot() + 
   geom_spatraster(data = elevation) + 
   scale_fill_hypso_c() + 
@@ -113,6 +123,9 @@ ggplot() +
 ```
 
 ```{r Plotting grouped by species into single maps, eval=FALSE, include=FALSE}
+###                        ###
+### not targeting the goal ###
+###                        ###  
 # Filtering for multiple species: 
 species_occurrences = species_occurrences_all %>% filter(species %in% species_names[1:10])
 
@@ -129,17 +142,20 @@ ggplot(species_occurrences) +
 
 Extract environmental data for presence and absence points
 
-occurrence will be the predictive variable
+1. Extract presence points of observed occurrences with bioclim and elevation data
+2. Generate background points with bioclim and elevatoin data with no obserations
+3. Join presence and absence points together
+4. Generate dummy columns for the species
+
+# TODO: Write in Text: Problem of tiny distance between absence points and presence points
 
 ```{r}
-# TODO: convert species into logical presence factors
-species_presence = sf::st_as_sf(terra::extract(worldclim,species_occurrences, bind=TRUE))
+species_presence = sf::st_as_sf(terra::extract(worldclim_bio,species_occurrences, bind=TRUE))
 tmp = terra::extract(elevation, species_occurrences, bind=FALSE, ID=FALSE)
-species_presence = cbind(species_presence, tmp, occurrence = c(1))
+species_presence = cbind(species_presence, tmp)
 head(species_presence)
 
 # generate distributed background points with col 'occurrence' = 0
-# TODO: add elevation data
 # TODO: why 1000 points?? give a explanation for the decisison
 background_points = sf::st_sample(sf::st_as_sf(border), size = 1000)
 
@@ -148,34 +164,44 @@ ggplot() +
   geom_sf(data = background_points)
 
 # TODO: more effiecently would be the bind presence and absence points together first and then extract values from raster and elevation
-# TODO: add column species wiht null values
 # Read values from bio
-species_absence = sf::st_as_sf(terra::extract(worldclim, terra::vect(background_points), bind=TRUE))
+species_absence = sf::st_as_sf(terra::extract(worldclim_bio, terra::vect(background_points), bind=TRUE))
 tmp = terra::extract(elevation, terra::vect(background_points), bind=FALSE, ID=FALSE)
-tmp2 = data.frame(c(0))
-species_absence = cbind(species_absence, tmp, tmp2, occurrence = c(0)); rm(tmp); rm(tmp2)
-species_absence <- species_absence %>% rename(species = 'c.0.')
+tmp2 = data.frame(c(NA))
+species_absence = cbind(species_absence, tmp, tmp2); rm(tmp); rm(tmp2)
+species_absence <- species_absence %>% rename(species = 'c.NA.')
 head(species_absence)
-
-#TODO: bind presence and absence points into one dataframe and plot some variables, see https://juliasilge.com/blog/baseball-racing/
 
 # cols have to be identical to rbind data frames together, check this before
 str(species_presence)
 str(species_absence)
 modeling_data_raw = rbind(species_presence, species_absence)
 # check if join was succesfull by head and tail of occurrence column
-head(modeling_data_raw$occurrence); tail(modelling_data$occurrence)
+head(modeling_data_raw$occurrence); tail(modeling_data_raw$occurrence)
 
+head(modeling_data_raw)
 
-out = modeling_data_raw %>% mutate( species = as.numeric(species))
+# TODO: convert species into logical presence factors
+modeling_data= dummy_columns( modeling_data_raw, select_columns = 'species', ignore_na = TRUE )
+modeling_data <- 
+  modeling_data %>% 
+  #replace(is.na(.), 0)
+  mutate(species_Aglais_caschmirensis = ifelse(is.na(species_Aglais_caschmirensis), 0, species_Aglais_caschmirensis)) %>%
+  mutate( species_Aglais_caschmirensis = factor(species_Aglais_caschmirensis))
 
+head(modeling_data)
+str(modeling_data)
+modeling_data
 ```
 
 Splitting the data into test and verfication dataset
 
 ## Data Overview
 
-```{r}
+```{r, eval=F}
+###             ###
+### not working ###
+###             ###  
 modeling_data_raw %>% filter(species == species_names[6]) %>%
   ggplot(aes(plate_x, plate_z, z = occurrece)) +
   stat_summary_hex(alpha = 0.8, bins = 10) +
@@ -191,12 +217,95 @@ Loop over all species and compute individual models
 
 try-catch
 
+```{r, eval = T}
+
+# only for development, filter to one species ## DO not filter here since absence points will be filtered out
+modeling_data_save = modeling_data
+modeling_data = modeling_data %>% select(c(-geometry, -species))
+modeling_data
+str(modeling_data)
+# resulst in getting a dataset with 52 samples pf aglais caschirensis
+
+predic_colname <- paste('species_', species_names[6], sep="")
+
+# taken from https://www.tidymodels.org/start/recipes/
+xgboost_recipe <- 
+  recipe( species_Aglais_caschmirensis ~ . , data = modeling_data)
+
+#summary(sdm_recipe)
+
+#prep(sdm_recipe)
+
+xgboost_model <- 
+  boost_tree(
+    trees = 200,
+    min_n = 5,
+    mtry = 2,
+    learn_rate = 0.01
+  ) %>%
+  set_engine("xgboost") %>%
+  set_mode("classification")
+
+xgboost_workflow <- workflow() %>% add_recipe(xgboost_recipe) %>% add_model(xgboost_model)
+
+xgboost_fit <- xgboost_workflow %>% 
+  fit(data = modeling_data)
+
+
+library(vip)
+xgboost_fit %>% 
+  extract_fit_parsnip() %>%
+  vip(geom = "point", num_features = 15)
+
+
+out = augment(xgboost_fit, modeling_data_save )
+
+out
+
+out = sf::st_as_sf(out)
+
+ggplot() + 
+  geom_spatraster(data = elevation) + 
+  scale_fill_hypso_c() + 
+  geom_sf(data = sf::st_as_sf(border), mapping=aes(alpha = 0), show.legend = FALSE) + 
+  geom_sf(data = out %>% filter(species_Aglais_caschmirensis == 1), mapping = aes(color = 'observed') )+
+  geom_sf(data = out %>% filter(.pred_class == 1), mapping = aes(color = 'predicted') );
+
+
+
+```
+```{r, eval = F}
+###             ###
+### not working ###
+###             ###  
+
+modeling_data
+
+dtrain <- 
+  xgb.DMatrix(
+    data = as.matrix(modeling_data %>% select(-species_Aglais_caschmirensis)), 
+    label = as.matrix(modeling_data %>% select(species_Aglais_caschmirensis))
+    )
+
+
+xgb_model <- xgboost(data = dtrain, max.depth = 2, eta = 1, nthread = 2, nrounds = 200, objective = "binary:logistic", verbose = T)
+
+xgb.plot.shap( data = as.matrix(modeling_data %>% select(-species_Aglais_caschmirensis)), model = xgb_model, top_n=7)
+
+#xgboost_pred <- predict(model, as.matrix(species_absence))
+
+
+
+```
+
+
+
 ## Model results
 
 Species Richness Map
 
 
-## Conclusion
+# Conclusion
 
 How was Computing Speed compared to other methods? 
 
