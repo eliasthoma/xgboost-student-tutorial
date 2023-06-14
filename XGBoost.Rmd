@@ -58,7 +58,7 @@ system(paste("R CMD INSTALL ", getwd(),  "/xgboost_r_gpu_win64_21d95f3d8f23873a7
 ```
 
 
-```{r}
+```{r loading libaries}
 require(xgboost)
 require(terra)
 require(geodata)
@@ -69,6 +69,7 @@ require(ggplot2)
 require(tidyterra)
 require(fastDummies)
 require(tidymodels)
+require(vip)
 ```
 
 ## Preparing data
@@ -77,15 +78,14 @@ Species Occurrences data from ...
 
 ```{r perparing species data}
 
-species_occurrences_all = read.table("data/PakistanLadakh.csv", sep = ",", header = TRUE)
-species_occurrences_all=sf::st_as_sf(species_occurrences_all, coords=c("x", "y"), remove=T, crs=sf::st_crs("epsg:4326"))
+species_occurrences_all = read.table("data/PakistanLadakh.csv", sep=",", header=TRUE)
+species_occurrences_all = sf::st_as_sf(species_occurrences_all, coords=c("x", "y"), remove=TRUE, crs=sf::st_crs("epsg:4326"))
 
 # list of species 
 species_names = (species_occurrences_all %>% distinct(species) %>% select(species))$species
 
 # list of species ordered by number of samples:
-species = data.frame(species_occurrences_all) %>% count(species) %>% arrange(desc(n))
-species
+species_nsamples = data.frame(species_occurrences_all) %>% count(species, sort=TRUE) %>% rename(n_samples = n)
 ```
 
 Environmental data used for modelling
@@ -97,44 +97,45 @@ Show List of bioclim data variables
 ```{r preparing environmental data}
 border <- geodata::gadm(country='PAK', level=0, path='./data')
 
-# TODO: rename layers to more readable names 
+
 worldclim_bio = geodata::worldclim_country(country="PAK", res=10, var="bio", path="data/", version = "2.1")
+# TODO: rename layers to more meaningful names 
 names(worldclim_bio)<-substr(names(worldclim_bio), 11, 20)
 
 # mask to border of Pakistan
-worldclim = terra::mask(worldclim_bio, border)
-#terra::writeRaster(r, "data/bioclim.tif", overwrite=T)
+worldclim_bio = terra::mask(worldclim_bio, border)
 
 elevation = geodata::elevation_30s(country='PAK', path='data/')
 ```
 
-```{r Plotting into a single map}
-species_occurrences = species_occurrences_all
-#species_occurrences = species_occurrences_all %>% filter(species %in% species_names[1:10])
-species_occurrences=dplyr::filter(species_occurrences_all, species=="Aglais_caschmirensis")
-head(species_occurrences)
+```{r Plotting species occurrences}
+# select which species you want to plot by commenting in/out desired lines
+#species_plot = species_occurrences_all
+species_plot = dplyr::filter(species_occurrences_all, species=="Aglais_caschmirensis")
+#species_Plot = dplyr::filter(species %in% species_names[1:10])
 
 # TODO: finalize legend
 ggplot() + 
   geom_spatraster(data = elevation) + 
   scale_fill_hypso_c() + 
   geom_sf(data = sf::st_as_sf(border), mapping=aes(alpha = 0), show.legend = FALSE) + 
-  geom_sf(data = species_occurrences, mapping = aes(colour = species) );
+  geom_sf(data = species_plot, mapping = aes(colour = species) );
 ```
 
-```{r Plotting grouped by species into single maps, eval=FALSE, include=FALSE}
+```{r Plotting grouped by species into single maps, eval=FALSE, include=FALSE, fig.width=50}
 ###                        ###
 ### not targeting the goal ###
 ###                        ###  
 # Filtering for multiple species: 
-species_occurrences = species_occurrences_all %>% filter(species %in% species_names[1:10])
+# species_plot
+#species_plot = species_occurrences_all %>% filter(species %in% species_names[1:10])
 
 # INFO: genearting the plot takes a lot timee due to the high number of different species
-ggplot(species_occurrences) + 
+ggplot(species_plot) + 
   geom_spatraster(data = elevation) + 
   scale_fill_hypso_c() + 
   geom_sf(data = sf::st_as_sf(border), mapping=aes(alpha = 0), show.legend = FALSE) + 
-  geom_sf(data = species_occurrences, mapping = aes(colour = species) ) +
+  geom_sf(data = species_plot, mapping = aes(colour = species) ) +
   facet_wrap(facets = vars(species), ncol = 2);
 ```
 
@@ -150,6 +151,59 @@ Extract environmental data for presence and absence points
 # TODO: Write in Text: Problem of tiny distance between absence points and presence points
 
 ```{r}
+# TODO: some sample points are outside of pakistan, remove them??
+
+species_presence = species_occurrences_all #%>% filter(species %in% species_names[1:10])
+#species_presence = sf::st_as_sf(terra::extract(worldclim_bio,species_occurrences, bind=TRUE))
+
+# generate distributed background points with col 'occurrence' = 0
+# TODO: why 1000 points?? give a explanation for the decisison
+background_points = sf::st_sample(sf::st_as_sf(border), size = 1000)
+# add species = NA to the backgroundpoints, needed for rbind to join the data
+species_absence = cbind(background_points, data.frame(species = as.character(NA)))
+species_absence = sf::st_as_sf(species_absence)
+
+modeling_data = rbind(species_presence, species_absence)
+# check if data is joined correctly, head should contain species names, tail NA values in the species column
+head(modeling_data); tail(modeling_data)
+
+# Extract values from worldclim_bio and elevation and join them to our modeling_data
+extraction_worldclim_bio = terra::extract(worldclim_bio,modeling_data, bind=FALSE, ID=FALSE)
+extraction_elevation = terra::extract(elevation,modeling_data, bind=FALSE, ID=FALSE)
+modeling_data_extracted = cbind( modeling_data, extraction_worldclim_bio, extraction_elevation)
+
+# Convert 
+# TODO: maybe this can be done by the workflow
+final_modeling_data <- dummy_columns( modeling_data_extracted, select_columns = 'species', ignore_na = FALSE )
+final_modeling_data <- 
+  final_modeling_data %>% 
+  mutate_at(c(23,ncol(final_modeling_data)), ~tidyr::replace_na(.,0))
+  #mutate(species_Aglais_caschmirensis = ifelse(is.na(species_Aglais_caschmirensis), 0, species_Aglais_caschmirensis)) %>%
+  #mutate( species_Aglais_caschmirensis = factor(species_Aglais_caschmirensis))
+
+head(final_modeling_data)
+str(final_modeling_data)
+
+
+#########################################################################################
+###################################### Plots ############################################
+#########################################################################################
+
+
+# plot of final_modeling_data
+ggplot() + 
+  geom_sf(data = sf::st_as_sf(border), mapping=aes(alpha = 0), show.legend = FALSE) + 
+  geom_sf(data = sf::st_as_sf(final_modeling_data), mapping=aes(color=species), show.legend = FALSE)
+```
+
+```{r, eval=F, include=F}
+#############  old ###################
+#############   |  ###################
+#############   V  ###################
+
+species_occurrences=dplyr::filter(species_occurrences_all, species=="Aglais_caschmirensis")
+
+
 species_presence = sf::st_as_sf(terra::extract(worldclim_bio,species_occurrences, bind=TRUE))
 tmp = terra::extract(elevation, species_occurrences, bind=FALSE, ID=FALSE)
 species_presence = cbind(species_presence, tmp)
@@ -185,9 +239,9 @@ head(modeling_data_raw)
 modeling_data= dummy_columns( modeling_data_raw, select_columns = 'species', ignore_na = TRUE )
 modeling_data <- 
   modeling_data %>% 
-  #replace(is.na(.), 0)
-  mutate(species_Aglais_caschmirensis = ifelse(is.na(species_Aglais_caschmirensis), 0, species_Aglais_caschmirensis)) %>%
-  mutate( species_Aglais_caschmirensis = factor(species_Aglais_caschmirensis))
+  replace(is.na(starts_with(species_)), 0)
+  #mutate(species_Aglais_caschmirensis = ifelse(is.na(species_Aglais_caschmirensis), 0, species_Aglais_caschmirensis)) %>%
+  #mutate( species_Aglais_caschmirensis = factor(species_Aglais_caschmirensis))
 
 head(modeling_data)
 str(modeling_data)
@@ -198,26 +252,108 @@ Splitting the data into test and verfication dataset
 
 ## Data Overview
 
-```{r, eval=F}
-###             ###
-### not working ###
-###             ###  
-modeling_data_raw %>% filter(species == species_names[6]) %>%
-  ggplot(aes(plate_x, plate_z, z = occurrece)) +
-  stat_summary_hex(alpha = 0.8, bins = 10) +
-  scale_fill_viridis_c(labels = species) +
-  labs(fill = "% occurence")
-```
-
-
-
 ## Training the model
 
-Loop over all species and compute individual models
+```{r}
+# tracking runtime
+start.time <- Sys.time()
+# current runtime for all species ~35min
 
-try-catch
+# use this for development to shorten runtime
+#final_modeling_data_save = final_modeling_data
+#final_modeling_data = final_modeling_data_save
+#final_modeling_data = final_modeling_data %>% filter(species %in% species_names[1:50] | is.na(species))
 
-```{r, eval = T}
+for( sp in (final_modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species )
+{
+  print(paste("Sarting compute for species:", sp))
+  tryCatch(
+    {
+      # TODO: select only used cols
+      data = final_modeling_data %>% 
+        filter(species == sp | is.na(species)) %>% 
+        select(ends_with(sp), matches("elv"), starts_with("bio")) %>%
+        rename_at( 1, ~"species_occurrence") %>%
+        mutate(species_occurrence = ifelse(is.na(species_occurrence), 0, species_occurrence)) %>%
+        mutate(species_occurrence = factor(species_occurrence))
+      
+      #str(data)
+      #message(data)
+      
+      # using "final_modeling_data" because of missing geometry in "data"
+      ggplot() + 
+        geom_sf(data = sf::st_as_sf(border), mapping=aes(alpha = 0), show.legend = FALSE) + 
+        geom_sf(data = sf::st_as_sf(final_modeling_data %>% filter(species == sp)), mapping=aes(color=species))
+      # Save the plot for every species in out/<species>/<species>.png
+      ggsave(paste(sp, ".png", sep=""), path=paste("out/",sp, sep=""))
+      
+      ########## Training the model ##########
+      xgboost_recipe <- 
+        recipe( species_occurrence ~ . , data = data)
+      
+      xgboost_model <- 
+        boost_tree(
+        trees = 500,
+        min_n = 2,
+        mtry = 3,
+        learn_rate = 0.01
+      ) %>%
+        set_engine("xgboost") %>%
+        set_mode("classification")
+
+      xgboost_workflow <- workflow() %>% add_recipe(xgboost_recipe) %>% add_model(xgboost_model)
+
+      xgboost_fit <- xgboost_workflow %>% 
+        fit(data = data)
+      
+      xgboost_fit %>% 
+        extract_fit_parsnip() %>%
+        vip(geom = "point", num_features = 15)
+      ggsave(paste(sp, "_fit.png", sep=""), path=paste("out/",sp, sep=""))
+      
+      
+      # TODO: create new random point dataset of pakistan with environmental data and high density 
+      # for a better spatial resultion of the prediction
+      predicted = augment(xgboost_fit, final_modeling_data)
+      
+      predicted = sf::st_as_sf( predicted %>% select(!starts_with("species_")) )
+
+      ggplot() + 
+        geom_spatraster(data = elevation) + 
+        scale_fill_hypso_c() + 
+        geom_sf(data = sf::st_as_sf(border), mapping=aes(alpha = 0), show.legend = FALSE) +
+        #geom_sf(data = sf::st_as_sf(data), mapping = aes(color = 'bg')) + 
+        geom_sf(data = predicted %>% filter(species == sp), mapping = aes(color = 'observed'), size = 5) +
+        geom_sf(data = predicted %>% filter(.pred_class == 1), mapping = aes(color = 'predicted'), size = 3 )
+      
+      ggsave(paste(sp, "_model.png", sep=""), path=paste("out/",sp, sep=""))
+      
+    },
+    error=function(cond)
+    {
+      message("Error:")
+      message(cond)
+    },
+    warning=function(cond)
+    {
+      message("Warning:")
+      message(cond)
+    },
+    finally={
+      message("finally")
+    }
+  )
+  print("finished")
+}
+
+# tracking runtime
+end.time <- Sys.time()
+diff <- end.time - start.time
+diff
+
+```
+
+```{r, eval = F, include=F, fig.width = 15}
 
 # only for development, filter to one species ## DO not filter here since absence points will be filtered out
 modeling_data_save = modeling_data
@@ -238,9 +374,9 @@ xgboost_recipe <-
 
 xgboost_model <- 
   boost_tree(
-    trees = 200,
-    min_n = 5,
-    mtry = 2,
+    trees = 1000,
+    min_n = 2,
+    mtry = 3,
     learn_rate = 0.01
   ) %>%
   set_engine("xgboost") %>%
@@ -267,14 +403,16 @@ out = sf::st_as_sf(out)
 ggplot() + 
   geom_spatraster(data = elevation) + 
   scale_fill_hypso_c() + 
-  geom_sf(data = sf::st_as_sf(border), mapping=aes(alpha = 0), show.legend = FALSE) + 
-  geom_sf(data = out %>% filter(species_Aglais_caschmirensis == 1), mapping = aes(color = 'observed') )+
-  geom_sf(data = out %>% filter(.pred_class == 1), mapping = aes(color = 'predicted') );
+  geom_sf(data = sf::st_as_sf(border), mapping=aes(alpha = 0), show.legend = FALSE) +
+  geom_sf(data = sf::st_as_sf(modeling_data_save), mapping = aes(color = 'bg')) + 
+  geom_sf(data = out %>% filter(species_Aglais_caschmirensis == 1), mapping = aes(color = 'observed'), size = 5) +
+  geom_sf(data = out %>% filter(.pred_class == 1), mapping = aes(color = 'predicted'), size = 3 )
 
 
 
 ```
-```{r, eval = F}
+
+```{r, eval = F, include=F}
 ###             ###
 ### not working ###
 ###             ###  
@@ -297,8 +435,6 @@ xgb.plot.shap( data = as.matrix(modeling_data %>% select(-species_Aglais_caschmi
 
 
 ```
-
-
 
 ## Model results
 
