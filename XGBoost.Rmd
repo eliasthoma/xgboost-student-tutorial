@@ -1,35 +1,260 @@
 ---
 title: "Tutorial: Using XGBoost for Species-Distribution-Modelling"
+output: 
+  html_document:
+    theme: united
+    numbered: TRUE
+    number_section: TRUE
+    toc: TRUE
+    toc_float: TRUE
 ---
+
+<style type="text/css">
+
+ body .main-container {
+        max-width: 1080px;
+    }
+    
+{ /* Normal  */
+      font-size: 12px;
+  }
+td {  /* Table  */
+  font-size: 9px;
+}
+h1.title {
+  font-size: 20px;
+  color: DarkRed;
+}
+h1 { /* Header 1 */
+  font-size: 18px;
+  color: DarkRed;
+}
+h2 { /* Header 2 */
+    font-size: 16px;
+  color: DarkRed;
+}
+h3 { /* Header 3 */
+  font-size: 14px;
+  font-family: "Times New Roman", Times, serif;
+  color: DarkBlue;
+}
+code.r{ /* Code block */
+    font-size: 12px;
+}
+pre { /* Code block - determines code spacing between lines */
+    font-size: 12px;
+}
+</style>
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-# Dummy notes area
+# ) Dummy notes area
 
 https://juliasilge.com/blog/baseball-racing/
 XGBoost-Docs: https://xgboost.readthedocs.io/en/stable/
 https://dieghernan.github.io/tidyterra/reference/geom_spatraster.html
 https://www.youtube.com/watch?v=gKyUucJwD8U&list=WL&index=71
 
+```{r, include=FALSE}
+#IMAGESLIDESHOW########################
+```
+
+# ) Irgendwann mal Mathe, jetzt aber noch placeholder!
+
+<style>
+  .image-container {
+    cursor: pointer;
+    position: relative;
+  }
+  .image-overlay {
+    display: none;
+  }
+  .image-caption {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    color: white;
+    padding: 5px;
+    text-align: center;
+    display: none;
+  }
+  .image-title {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    color: white;
+    padding: 5px;
+    text-align: center;
+    display: none;
+  }
+</style>
+
+<div class="image-container" onclick="toggleImage()">
+  <div class="image-title" id="title1">Schmetterling Nummer 1</div>
+  <img id="image1" src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgoleZF5OOg5AQ8lcwuiFLFBBX7C_byUkbkDTb-dTfIyM8kGxXxGOlGo2eEuxH2bFKePl0SuQJEdX18oY_LyGvnb2ttWhzjoE10Xn85YFzlrtE8AecNp923lYgyuKnJkYh4H3kORCLoDYE3UKzVI6-kUP9AHPKnY6VFxQUKoVl3QuQYXfxEYvdsNdtP/s1600/image1.jpeg" alt="Image 1">
+  <div class="image-overlay"></div>
+  <div class="image-caption" id="caption1">Erklärung zu Schmetterling 1</div>
+</div>
+
+<div class="image-container" onclick="toggleImage()">
+  <div class="image-title" id="title2">Title for Image 2</div>
+  <img id="image2" src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiyDKfdGVTeLJ8Lr1ETEK0MXFzikyArJbB91qlmMAKeJ_re9PF6lxiNR9-iZji-DE4s-67bYWD1gOPPYln03Pepm--lw9ZvXiQ5ZXascNJgMDKQ6F32MPjp4qc6iCOw63fZ7qNYIMEnG9ZgyhyUxGzrP6IAFDgwS1v2S4FVaHFSP1bgI9nHe3xDcsBU/s1600/image2.jpeg" alt="Image 2" style="display: none;">
+  <div class="image-overlay"></div>
+  <div class="image-caption" id="caption2">Caption for Image 2</div>
+</div>
+
+<div class="image-container" onclick="toggleImage()">
+  <div class="image-title" id="title3">Title for Image 3</div>
+  <img id="image3" src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgt40cPg7gYkS4BP_ZhoPznTJd3FLjLgP8SesjkAjPq0-Glj1ZAWqnBK6wNZk4qKED_g-QqKltNXq-38Sl9B7-pinKOML6o5ytWP019pIC9Rr7NLIcaV2dDOpa4QRPFbbJXhp1wPUIgkS8X_U7Y5wiUPbwwMdtLEFP3ktn8h84cEbe0UPJ8hXMcYUjL/s1600/3test.png" alt="Image 3" style="display: none;">
+  <div class="image-overlay"></div>
+  <div class="image-caption" id="caption3">Caption for Image 3</div>
+</div>
+
+<div class="image-container" onclick="toggleImage()">
+  <div class="image-title" id="title4">Title for Image 4</div>
+  <img id="image4" src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhNhQraYEHQP676HQv_S1uTUwLIkxBj240-18mPrkrVfE3Elir5ebXa2nOLfrD_qAq4-BeCTvnZ5USiADrr5v_tnyWoIflTbzG13TYi8pI1JnGPmkao42IdISsHIxdZDNhldfKrw-c5REfJbChD_OhpgvvczS6S9qbQou2tzF_-LeFBV6R67rO9s29e/s1600/image3.png" alt="Image 4" style="display: none;">
+  <div class="image-overlay"></div>
+  <div class="image-caption" id="caption4">Caption for Image 4</div>
+</div>
+
+```{r, echo=FALSE}
+#to add new image copy imagecontainer and change URLS and "imageNUMBER", "captionNUMBER" etc.:
+
+#<div class="image-container" onclick="toggleImage()">
+#  <div class="image-title" id="titleNEW">Title for Image NEW</div>
+#  <img id="imageNEW" src="URL_OF_NEW_IMAGE" alt="Image NEW" style="display: none;">
+#  <div class="image-overlay"></div>
+#  <div class="image-caption" id="captionNEW">Caption for Image NEW</div>
+#</div>
+
+#THEN ADD:
+
+#var imageNEW = document.getElementById("imageNEW");
+
+#var overlayNEW = document.getElementById("imageNEW").nextElementSibling;
+
+# var captionNEW = document.getElementById("captionNEW");
+
+#var titleNEW = document.getElementById("titleNEW");
+
+#TO COLUMNS BELOW. AND ADD:
+
+#} else {
+#      imageNEW.style.display = "none";
+#      overlayNEW.style.display = "none";
+#      captionNEW.style.display = "none";
+#      titleNEW.style.display = "none";
+#########THIS HAS TO BE ADDED TO PREVIOUS IMAGE:
+
+#} else if (imageCounter === PREVIOUSIMAGE) {
+
+#########THIS HAS TO BE CHANGED IN PREVIOUS IMAGE!!!################
+
+#      image1.style.display = "block";
+#      overlay1.style.display = "block";
+#      caption1.style.display = "block";
+#      title1.style.display = "block";
+```
+<script>
+  var imageCounter = 1;
+
+  function toggleImage() {
+    var image1 = document.getElementById("image1");
+    var image2 = document.getElementById("image2");
+    var image3 = document.getElementById("image3");
+    var image4 = document.getElementById("image4");
+    var overlay1 = document.getElementById("image1").nextElementSibling;
+    var overlay2 = document.getElementById("image2").nextElementSibling;
+    var overlay3 = document.getElementById("image3").nextElementSibling;
+    var overlay4 = document.getElementById("image4").nextElementSibling;
+    var caption1 = document.getElementById("caption1");
+    var caption2 = document.getElementById("caption2");
+    var caption3 = document.getElementById("caption3");
+    var caption4 = document.getElementById("caption4");
+    var title1 = document.getElementById("title1");
+    var title2 = document.getElementById("title2");
+    var title3 = document.getElementById("title3");
+    var title4 = document.getElementById("title4");
+
+    if (imageCounter === 1) {
+      image1.style.display = "none";
+      overlay1.style.display = "none";
+      caption1.style.display = "none";
+      title1.style.display = "none";
+
+      image2.style.display = "block";
+      overlay2.style.display = "block";
+      caption2.style.display = "block";
+      title2.style.display = "block";
+
+      imageCounter = 2;
+    } else if (imageCounter === 2) {
+      image2.style.display = "none";
+      overlay2.style.display = "none";
+      caption2.style.display = "none";
+      title2.style.display = "none";
+
+      image3.style.display = "block";
+      overlay3.style.display = "block";
+      caption3.style.display = "block";
+      title3.style.display = "block";
 
 
-# Species Distribution Modeling
+      imageCounter = 3;
+    } else if (imageCounter === 3) {
+      image3.style.display = "none";
+      overlay3.style.display = "none";
+      caption3.style.display = "none";
+      title3.style.display = "none";
+
+      image4.style.display = "block";
+      overlay4.style.display = "block";
+      caption4.style.display = "block";
+      title4.style.display = "block";
+      
+      imageCounter = 4;
+    } else {
+      image4.style.display = "none";
+      overlay4.style.display = "none";
+      caption4.style.display = "none";
+      title4.style.display = "none";
+
+      image1.style.display = "block";
+      overlay1.style.display = "block";
+      caption1.style.display = "block";
+      title1.style.display = "block";
+
+      imageCounter = 1;
+      
+    }
+  }
+
+  // Show the caption and title of the initial image
+  document.getElementById("caption1").style.display = "block";
+  document.getElementById("title1").style.display = "block";
+</script>
+
+# ) Species Distribution Modeling
 
 
 
 
-# Extreme Gradient Boosting Algorithem
+# ) Extreme Gradient Boosting Algorithem
 
 
 
 
-# Application of XGBoost
+# ) Application of XGBoost
 
 
 
 
-## Prerequisites
+# ) Prerequisites
 
 Before you dive into the code you need to install some packages this script will use: 
 
@@ -83,7 +308,7 @@ require(tidymodels)
 require(vip)
 ```
 
-## Preparing data
+# ) Preparing data
 
 Let's start with preparing the data used to train the model. The steps of the following script can be summarized in:
 
@@ -151,7 +376,7 @@ modeling_data = modeling_data_extracted
 rm(species_occurrences_all); rm(species_presence); rm(background_points); rm(species_absence); rm(modeling_data_); rm(extraction_bioclim_pak); rm(extraction_elevation_pak); rm(modeling_data_extracted)
 ```
 
-## Data overview
+# ) Data overview
 
 Check your results:
 
@@ -215,7 +440,7 @@ ggplot(species_nsamples, aes(n_samples)) +
 
 
 
-## Training the model
+# ) Training the model
 
 ```{r Traning the model, fig.width=20}
 for(sp in (modeling_data$species[1]))
@@ -448,7 +673,7 @@ xgb.plot.shap( data = as.matrix(modeling_data %>% select(-species_Aglais_caschmi
 
 ```
 
-## Model results
+# ) Model results
 
 Interessting species predictions:
 - Tarucus_theophrastus
@@ -466,10 +691,10 @@ Species with small number of samples resuting in no prediction. Where ist the mi
 
 
 
-Species Richness Map
+# ) Species Richness Map
 
 
-# Conclusion
+# ) Conclusion
 
 How was Computing Speed compared to other methods? 
 
