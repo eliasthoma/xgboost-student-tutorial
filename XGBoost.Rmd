@@ -31,6 +31,8 @@ https://www.youtube.com/watch?v=gKyUucJwD8U&list=WL&index=71
 
 ## Prerequisites
 
+Before you dive into the code you need to install some packages this script will use: 
+
 ```{r Install packages, eval=FALSE}
 install.packages('tidyverse')
 install.packages("ggplot2")
@@ -41,28 +43,37 @@ install.packages('tidymodels')
 #if(!require(dplyr)){install.packages('dplyr')}
 ```
 
-Install XGBoost
-
-```{r Setup from Cran, eval=FALSE, include=TRUE}
+The XGBoost package can by installed in two different ways. First there is the default package from CRAN, which will do it in most situations.
+```{r Setup from CRAN, eval=FALSE, include=TRUE}
 install.packages("xgboost")
 ```
-To use GPU acceleration you need to install a prebuild binary:
-```{r Manuall setup for GPU acceleration, eval=FALSE, include=TRUE}
-# Check if r is in path
-system("where R")
-# TODO: Add r to session path here if not found else you have to edit your user profile path settings in windows and add r manually
+But if you are dealing with large data sets you may want to use GPU acceleration. Therefor you have to use a prebuild package from GITHUB (https://github.com/dmlc/xgboost/releases). Download it, place it in the same folder as this script und run the commands below.
+```{r Setup for GPU acceleration, eval=FALSE, include=TRUE}
 # Install dependencies
-system('R -q -e "install.packages(c(\'data.table\', \'jsonlite\'))"')
+system('R -q -e "install.packages(c(\'data.table\', \'jsonlite\'))"') # TODO: convert this to r code
 # Install XGBoost
 system(paste("R CMD INSTALL ", getwd(),  "/xgboost_r_gpu_win64_21d95f3d8f23873a76f8afaad0fee5fa3e00eafe.tar.gz", sep=""))
 ```
 
+After installing all needed libaries you need to load them: 
 
-```{r loading libaries}
+```{r Loading libaries, eval=T, include=F}
+# TODO: clean up this code
+# TODO: disable output? but run it while knitting
+
+require(dplyr)      # easy dataframe modification
+require(geodata)    # downloading geospatial world dataset made easy
+
+
+require(tidyverse)
+require(tidymodels)
+require(fastDummies)
+
+
+
 require(xgboost)
-require(terra)
+require(terra) #TODO_ check if terry needed?
 require(geodata)
-
 require(dplyr)
 require(tidyverse)
 require(ggplot2)
@@ -74,188 +85,189 @@ require(vip)
 
 ## Preparing data
 
-Species Occurrences data from ...
+Let's start with preparing the data used to train the model. The steps of the following script can be summarized in:
 
-```{r perparing species data}
+1. Load species occurrence data from csv file
+2. Convert species to geospatial 'simple feature' object
+3. Load border, bioclim and elevation for pakistan from geodata package
+4. Generate random points inside pakistan as background points and extend them with a column for species = NA
+5. Combine presence and absence (background) points into a single object
+6. Extract bioclim and elevation values for the modeling_data 
 
+```{r Preparing data}
+##################################################
+##########    Step 1 - Loading data     ##########
+##################################################
+
+# species oberservation data from pakistan
 species_occurrences_all = read.table("data/PakistanLadakh.csv", sep=",", header=TRUE)
 species_occurrences_all = sf::st_as_sf(species_occurrences_all, coords=c("x", "y"), remove=TRUE, crs=sf::st_crs("epsg:4326"))
 
-# list of species 
-species_names = (species_occurrences_all %>% distinct(species) %>% select(species))$species
+# TODO: check level of border_pak data, is this the top level border?
+# political border of pakistan
+border_pak <- geodata::gadm(country='PAK', level=0, path='./data')
 
-# list of species ordered by number of samples:
-species_nsamples = data.frame(species_occurrences_all) %>% count(species, sort=TRUE) %>% rename(n_samples = n)
-```
+# bioclim data from pakistan
+bioclim_pak = geodata::worldclim_country(country="PAK", res=10, var="bio", path="data/", version = "2.1")
+names(bioclim_pak)<-substr(names(bioclim_pak), 11, 20) # TODO: rename to mare meaningfull names or show table of layers in text
+bioclim_pak = terra::mask(bioclim_pak, border_pak)
 
-Environmental data used for modelling
-
-Using the package geodata to obtain environmental data of pakistan. The ISO country code for pakistan can be found by using geodata::country_codes(query = 'Pakistan')
-
-Show List of bioclim data variables
-
-```{r preparing environmental data}
-border <- geodata::gadm(country='PAK', level=0, path='./data')
+# elevation data form pakistan
+elevation_pak = geodata::elevation_30s(country='PAK', path='data/')
 
 
-worldclim_bio = geodata::worldclim_country(country="PAK", res=10, var="bio", path="data/", version = "2.1")
-# TODO: rename layers to more meaningful names 
-names(worldclim_bio)<-substr(names(worldclim_bio), 11, 20)
+##################################################
+##########  Step 2 - Data aggregation   ##########
+##################################################
 
-# mask to border of Pakistan
-worldclim_bio = terra::mask(worldclim_bio, border)
-
-elevation = geodata::elevation_30s(country='PAK', path='data/')
-```
-
-```{r Plotting species occurrences}
-# select which species you want to plot by commenting in/out desired lines
-#species_plot = species_occurrences_all
-species_plot = dplyr::filter(species_occurrences_all, species=="Aglais_caschmirensis")
-#species_Plot = dplyr::filter(species %in% species_names[1:10])
-
-# TODO: finalize legend
-ggplot() + 
-  geom_spatraster(data = elevation) + 
-  scale_fill_hypso_c() + 
-  geom_sf(data = sf::st_as_sf(border), mapping=aes(alpha = 0), show.legend = FALSE) + 
-  geom_sf(data = species_plot, mapping = aes(colour = species) );
-```
-
-```{r Plotting grouped by species into single maps, eval=FALSE, include=FALSE, fig.width=50}
-###                        ###
-### not targeting the goal ###
-###                        ###  
-# Filtering for multiple species: 
-# species_plot
-#species_plot = species_occurrences_all %>% filter(species %in% species_names[1:10])
-
-# INFO: genearting the plot takes a lot timee due to the high number of different species
-ggplot(species_plot) + 
-  geom_spatraster(data = elevation) + 
-  scale_fill_hypso_c() + 
-  geom_sf(data = sf::st_as_sf(border), mapping=aes(alpha = 0), show.legend = FALSE) + 
-  geom_sf(data = species_plot, mapping = aes(colour = species) ) +
-  facet_wrap(facets = vars(species), ncol = 2);
-```
+# presence points
+species_presence = species_occurrences_all
 
 
-
-Extract environmental data for presence and absence points
-
-1. Extract presence points of observed occurrences with bioclim and elevation data
-2. Generate background points with bioclim and elevatoin data with no obserations
-3. Join presence and absence points together
-4. Generate dummy columns for the species
-
-# TODO: Write in Text: Problem of tiny distance between absence points and presence points
-
-```{r}
-# TODO: some sample points are outside of pakistan, remove them??
-
-species_presence = species_occurrences_all #%>% filter(species %in% species_names[1:10])
-#species_presence = sf::st_as_sf(terra::extract(worldclim_bio,species_occurrences, bind=TRUE))
-
-# generate distributed background points with col 'occurrence' = 0
+# Generate random points inside pakistan as background points and extend them with a column for species = NA
 # TODO: why 1000 points?? give a explanation for the decisison
-background_points = sf::st_sample(sf::st_as_sf(border), size = 1000)
+border_pak = sf::st_as_sf(border_pak)
+background_points = sf::st_sample(border_pak, size = 1000)
 # add species = NA to the backgroundpoints, needed for rbind to join the data
 species_absence = cbind(background_points, data.frame(species = as.character(NA)))
 species_absence = sf::st_as_sf(species_absence)
 
-modeling_data = rbind(species_presence, species_absence)
-# check if data is joined correctly, head should contain species names, tail NA values in the species column
+
+# Combine presence and absence (background) points into a single object
+modeling_data_ = rbind(species_presence, species_absence)
+# Only points inside Pakistan should be used for modeling, also remove the columns added by the intersection. 
+modeling_data_ = sf::st_intersection(modeling_data_, border_pak) %>% select(-COUNTRY, -GID_0)
+
+
+# Extract values from bioclim and elevation, join them to our modeling_data
+extraction_bioclim_pak = terra::extract(bioclim_pak, modeling_data_, bind=FALSE, ID=FALSE)
+extraction_elevation_pak = terra::extract(elevation_pak, modeling_data_, bind=FALSE, ID=FALSE)
+modeling_data_extracted = cbind( modeling_data_, extraction_bioclim_pak, extraction_elevation_pak)
+
+modeling_data = modeling_data_extracted
+
+
+# clean up
+rm(species_occurrences_all); rm(species_presence); rm(background_points); rm(species_absence); rm(modeling_data_); rm(extraction_bioclim_pak); rm(extraction_elevation_pak); rm(modeling_data_extracted)
+```
+
+## Data overview
+
+Check your results:
+
+Are there presence and absence points inside the modeling_data ? Check if the species column has names (=presence) and NA (=absence) values.
+```{r Data overview 1}
 head(modeling_data); tail(modeling_data)
-
-# Extract values from worldclim_bio and elevation and join them to our modeling_data
-extraction_worldclim_bio = terra::extract(worldclim_bio,modeling_data, bind=FALSE, ID=FALSE)
-extraction_elevation = terra::extract(elevation,modeling_data, bind=FALSE, ID=FALSE)
-modeling_data_extracted = cbind( modeling_data, extraction_worldclim_bio, extraction_elevation)
-
-# Convert 
-# TODO: maybe this can be done by the workflow
-final_modeling_data <- dummy_columns( modeling_data_extracted, select_columns = 'species', ignore_na = FALSE )
-final_modeling_data <- 
-  final_modeling_data %>% 
-  mutate_at(c(23,ncol(final_modeling_data)), ~tidyr::replace_na(.,0))
-  #mutate(species_Aglais_caschmirensis = ifelse(is.na(species_Aglais_caschmirensis), 0, species_Aglais_caschmirensis)) %>%
-  #mutate( species_Aglais_caschmirensis = factor(species_Aglais_caschmirensis))
-
-head(final_modeling_data)
-str(final_modeling_data)
-
-
-#########################################################################################
-###################################### Plots ############################################
-#########################################################################################
-
-
-# plot of final_modeling_data
-ggplot() + 
-  geom_sf(data = sf::st_as_sf(border), mapping=aes(alpha = 0), show.legend = FALSE) + 
-  geom_sf(data = sf::st_as_sf(final_modeling_data), mapping=aes(color=species), show.legend = FALSE)
 ```
 
-```{r, eval=F, include=F}
-#############  old ###################
-#############   |  ###################
-#############   V  ###################
+Is the elevation data correctly loaded? Plot a map:
 
-species_occurrences=dplyr::filter(species_occurrences_all, species=="Aglais_caschmirensis")
-
-
-species_presence = sf::st_as_sf(terra::extract(worldclim_bio,species_occurrences, bind=TRUE))
-tmp = terra::extract(elevation, species_occurrences, bind=FALSE, ID=FALSE)
-species_presence = cbind(species_presence, tmp)
-head(species_presence)
-
-# generate distributed background points with col 'occurrence' = 0
-# TODO: why 1000 points?? give a explanation for the decisison
-background_points = sf::st_sample(sf::st_as_sf(border), size = 1000)
-
+```{r Data overview 2}
 ggplot() + 
-  geom_sf(data = sf::st_as_sf(border), mapping=aes(alpha = 0), show.legend = FALSE) + 
-  geom_sf(data = background_points)
-
-# TODO: more effiecently would be the bind presence and absence points together first and then extract values from raster and elevation
-# Read values from bio
-species_absence = sf::st_as_sf(terra::extract(worldclim_bio, terra::vect(background_points), bind=TRUE))
-tmp = terra::extract(elevation, terra::vect(background_points), bind=FALSE, ID=FALSE)
-tmp2 = data.frame(c(NA))
-species_absence = cbind(species_absence, tmp, tmp2); rm(tmp); rm(tmp2)
-species_absence <- species_absence %>% rename(species = 'c.NA.')
-head(species_absence)
-
-# cols have to be identical to rbind data frames together, check this before
-str(species_presence)
-str(species_absence)
-modeling_data_raw = rbind(species_presence, species_absence)
-# check if join was succesfull by head and tail of occurrence column
-head(modeling_data_raw$occurrence); tail(modeling_data_raw$occurrence)
-
-head(modeling_data_raw)
-
-# TODO: convert species into logical presence factors
-modeling_data= dummy_columns( modeling_data_raw, select_columns = 'species', ignore_na = TRUE )
-modeling_data <- 
-  modeling_data %>% 
-  replace(is.na(starts_with(species_)), 0)
-  #mutate(species_Aglais_caschmirensis = ifelse(is.na(species_Aglais_caschmirensis), 0, species_Aglais_caschmirensis)) %>%
-  #mutate( species_Aglais_caschmirensis = factor(species_Aglais_caschmirensis))
-
-head(modeling_data)
-str(modeling_data)
-modeling_data
+  geom_spatraster(data = elevation_pak) +
+  geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) +
+  scale_fill_hypso_c(name="Elevation")
 ```
 
-Splitting the data into test and verfication dataset
+Is the bioclim data correctly loaded? Plot a map:
 
-## Data Overview
+```{r  Data overview 3, fig.width=15}
+# TODO: set value scale to be individual for every plot.
+ggplot() + 
+  geom_spatraster(data = bioclim_pak) +
+  facet_wrap(~lyr) +
+  geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) + 
+  ggtitle("Bioclim data of Pakistan")
+
+
+#for (layer in names(bioclim_pak)) {
+#  ggplot() + 
+#    geom_spatraster(data = bioclim_pak[layer]) +
+#    geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) + 
+#    ggtitle(paste("Bioclim", layer, "data of Pakistan")) 
+#}
+```
+
+How is the modeling data spatially distributed? Plot a map:
+
+```{r  Data overview 4}
+ggplot() + 
+  geom_sf(data = sf::st_as_sf(border_pak), mapping=aes(alpha = 0), show.legend = FALSE) + 
+  geom_sf(data = sf::st_as_sf(modeling_data), mapping=aes(color=species), show.legend = FALSE) +
+  ggtitle("Oberserved occurrence of butterflies in Pakistan plus background points")
+```
+How many samples do the species data have?
+Show Min, Max, Avg, maybe Histogramm
+
+```{r Data overview 5}
+species_nsamples = data.frame(modeling_data) %>% 
+                    count(species, sort=TRUE) %>% 
+                    rename(n_samples = n) %>% 
+                    filter(!is.na(species))
+
+ggplot(species_nsamples, aes(n_samples)) +
+       geom_histogram(binwidth = 5) +
+       geom_vline(aes(xintercept=mean(n_samples)), linetype="dashed") +
+       annotate(x=mean(species_nsamples$n_samples), y=+Inf, label=paste("Mean:",round(mean(species_nsamples$n_samples),2)), vjust=3, geom="label") +
+       labs(x = "Number of Samples", y = "Number of Species")
+
+```
+
+
 
 ## Training the model
 
-```{r}
-# tracking runtime
+```{r Traning the model, fig.width=20}
+for(sp in (modeling_data$species[1]))
+#for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species)
+{
+  message(paste("Training model for species", sp))
+  
+  # filter modeling data to current species, don't forget the absence points!
+  data = modeling_data %>% filter(species == sp | is.na(species))
+  data <- dummy_columns(data, select_columns = 'species',
+                        ignore_na = TRUE, 
+                        remove_selected_columns = TRUE)
+  
+  # make dummy_columns name persistent over all species
+  # replace NA values with 0
+  data <- data %>% 
+            rename(species_occurrence = starts_with("species_")) %>%
+            mutate(species_occurrence = ifelse(is.na(species_occurrence), 0, species_occurrence)) %>%
+            mutate(species_occurrence = factor(species_occurrence))
+  
+  training_data <- xgb.DMatrix(data = as.matrix(data %>% select(-species_occurrence, -geometry)), 
+                               label = as.matrix(data %>% select(species_occurrence))
+                               )
+  
+  xgb_model <- xgboost(data = training_data, 
+                       max.depth = 10,
+                       eta = 1, 
+                       nthread = 2, 
+                       nrounds = 20,
+                       objective = "binary:logistic")
+  
+  #xgb_model[["evaluation_log"]]
+  
+  #importance <- xgb.importance(model = xgb_model)
+  #xgb.plot.importance(importance_matrix = importance)
+  
+  #xgb.ggplot.deepness(xgb_model)
+  
+  xgb.ggplot.shap.summary(data = as.matrix(data %>% select(-species_occurrence, -geometry)),
+                          model = xgb_model
+                          )
+
+}
+
+```
+
+
+
+
+
+```{r, eval=F, include=F}
+ # tracking runtime
 start.time <- Sys.time()
 # current runtime for all species ~35min
 
@@ -353,7 +365,7 @@ diff
 
 ```
 
-```{r, eval = F, include=F, fig.width = 15}
+```{r, eval=F, include=F, fig.width=15}
 
 # only for development, filter to one species ## DO not filter here since absence points will be filtered out
 modeling_data_save = modeling_data
@@ -412,7 +424,7 @@ ggplot() +
 
 ```
 
-```{r, eval = F, include=F}
+```{r, eval=F, include=F}
 ###             ###
 ### not working ###
 ###             ###  
@@ -437,6 +449,22 @@ xgb.plot.shap( data = as.matrix(modeling_data %>% select(-species_Aglais_caschmi
 ```
 
 ## Model results
+
+Interessting species predictions:
+- Tarucus_theophrastus
+- Lethe_verma
+- Junonia_iphita
+
+
+predictions were made for points outside pakistan. There should be no data extracted for those points. How ist this possible?
+Cut samples with polygon of pakistan!
+
+Species with small number of samples resuting in no prediction. Where ist the min the predicton works? Check Species with 1, 2, 3, 4, 5 Samples and so on 
+
+
+
+
+
 
 Species Richness Map
 
