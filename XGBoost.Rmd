@@ -245,6 +245,11 @@ function showSlides(n) {
 
 # ) Application of XGBoost in R
 
+```{r}
+#knitr::knit_exit()
+```
+
+
 ## ) Prerequisites
 
 Before you dive into the code you need to install some packages this script will use: 
