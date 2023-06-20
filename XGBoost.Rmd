@@ -55,6 +55,9 @@ https://juliasilge.com/blog/baseball-racing/
 XGBoost-Docs: https://xgboost.readthedocs.io/en/stable/
 https://dieghernan.github.io/tidyterra/reference/geom_spatraster.html
 https://www.youtube.com/watch?v=gKyUucJwD8U&list=WL&index=71
+https://www.geeksforgeeks.org/xgboost/
+
+cbind: besser merge benutzen
 
 ```{r, include=FALSE}
 #IMAGESLIDESHOW########################
@@ -249,12 +252,12 @@ https://www.youtube.com/watch?v=gKyUucJwD8U&list=WL&index=71
 
 
 
-# ) Application of XGBoost
+# ) Application of XGBoost in R
 
 
 
 
-# ) Prerequisites
+## ) Prerequisites
 
 Before you dive into the code you need to install some packages this script will use: 
 
@@ -283,6 +286,8 @@ system(paste("R CMD INSTALL ", getwd(),  "/xgboost_r_gpu_win64_21d95f3d8f23873a7
 After installing all needed libaries you need to load them: 
 
 ```{r Loading libaries, eval=T, include=F}
+
+# results = "hide"
 # TODO: clean up this code
 # TODO: disable output? but run it while knitting
 
@@ -308,7 +313,7 @@ require(tidymodels)
 require(vip)
 ```
 
-# ) Preparing data
+## ) Preparing data
 
 Let's start with preparing the data used to train the model. The steps of the following script can be summarized in:
 
@@ -353,6 +358,8 @@ species_presence = species_occurrences_all
 # TODO: why 1000 points?? give a explanation for the decisison
 border_pak = sf::st_as_sf(border_pak)
 background_points = sf::st_sample(border_pak, size = 1000)
+
+# TODO: add col for occurrence = 1 or occurrence = 0 here, dunmycols can then be trown away
 # add species = NA to the backgroundpoints, needed for rbind to join the data
 species_absence = cbind(background_points, data.frame(species = as.character(NA)))
 species_absence = sf::st_as_sf(species_absence)
@@ -369,14 +376,14 @@ extraction_bioclim_pak = terra::extract(bioclim_pak, modeling_data_, bind=FALSE,
 extraction_elevation_pak = terra::extract(elevation_pak, modeling_data_, bind=FALSE, ID=FALSE)
 modeling_data_extracted = cbind( modeling_data_, extraction_bioclim_pak, extraction_elevation_pak)
 
+
+# create a final data variable and clean up variables
 modeling_data = modeling_data_extracted
 
-
-# clean up
 rm(species_occurrences_all); rm(species_presence); rm(background_points); rm(species_absence); rm(modeling_data_); rm(extraction_bioclim_pak); rm(extraction_elevation_pak); rm(modeling_data_extracted)
 ```
 
-# ) Data overview
+## ) Data overview
 
 Check your results:
 
@@ -413,6 +420,7 @@ ggplot() +
 #}
 ```
 
+
 How is the modeling data spatially distributed? Plot a map:
 
 ```{r  Data overview 4}
@@ -421,8 +429,8 @@ ggplot() +
   geom_sf(data = sf::st_as_sf(modeling_data), mapping=aes(color=species), show.legend = FALSE) +
   ggtitle("Oberserved occurrence of butterflies in Pakistan plus background points")
 ```
-How many samples do the species data have?
-Show Min, Max, Avg, maybe Histogramm
+
+** How many samples do the species data have? **
 
 ```{r Data overview 5}
 species_nsamples = data.frame(modeling_data) %>% 
@@ -439,12 +447,11 @@ ggplot(species_nsamples, aes(n_samples)) +
 ```
 
 
+## ) Training the model
 
-# ) Training the model
-
-```{r Traning the model, fig.width=20}
-for(sp in (modeling_data$species[1]))
-#for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species)
+```{r Traning the model}
+#for(sp in (modeling_data$species[16]))
+for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species)
 {
   message(paste("Training model for species", sp))
   
@@ -464,31 +471,43 @@ for(sp in (modeling_data$species[1]))
   training_data <- xgb.DMatrix(data = as.matrix(data %>% select(-species_occurrence, -geometry)), 
                                label = as.matrix(data %>% select(species_occurrence))
                                )
-  
-  xgb_model <- xgboost(data = training_data, 
-                       max.depth = 10,
-                       eta = 1, 
-                       nthread = 2, 
+  # check the parameters here https://xgboost.readthedocs.io/en/latest/paramet er.html
+  xgb_model <- xgb.train(data = training_data,
+                       verbosity = 3, # 0 (silent), 1 (warning), 2 (info), 3 (debug)
+                       
+                       eta = 0.3, # learning rate, default = 0.3
+                       gamma = 0, # Minimum loss reduction, default = 0
+                       max.depth = 6, # default = 6
+                       #sampling_method = "gradient_based", # default = uniform
+                       #lampda = 1,
+                       alpha = 0,
+                       #three_method = "gpu_hist",
+                       
+                       #nthread = 2, 
                        nrounds = 20,
-                       objective = "binary:logistic")
+                       objective = "binary:logistic"
+                       #objective = "reg:squaredlogerror" # 
+                       # save_name = paste("out/", sp, "/" ,sp, ".model", sep = "") # path to save model
+                       )
   
   #xgb_model[["evaluation_log"]]
   
-  #importance <- xgb.importance(model = xgb_model)
+  importance <- xgb.importance(model = xgb_model)
   #xgb.plot.importance(importance_matrix = importance)
   
   #xgb.ggplot.deepness(xgb_model)
   
-  xgb.ggplot.shap.summary(data = as.matrix(data %>% select(-species_occurrence, -geometry)),
-                          model = xgb_model
-                          )
+  xgb.ggplot.shap.summary(data = as.matrix(data %>% select(-species_occurrence, -geometry)), model = xgb_model )
+  ggsave(paste(sp, "_shap.png", sep=""), path=paste("out/",sp, sep=""))
 
+  # TODO: create folder beforhand
+  xgb.save(xgb_model, paste("out/", sp, "/" ,sp, ".model", sep = ""))
+  
+  # Cleanup before next iteration
+  rm(sp); rm(data); rm(training_data); rm(xgb_model); rm(importance)
 }
 
 ```
-
-
-
 
 
 ```{r, eval=F, include=F}
@@ -673,7 +692,85 @@ xgb.plot.shap( data = as.matrix(modeling_data %>% select(-species_Aglais_caschmi
 
 ```
 
-# ) Model results
+## ) Prediction
+
+Steps:
+1. Generate Point Grid for pakistan, point_distance = xx meters
+2. Extract environmental data for point grid
+3. Predict occurrence based on the build models
+3. Rasterrize points
+
+```{r}
+# TODO: vectorize raster of pakistan
+prediction_points_raw = sf::st_sample(border_pak, type="regular", size = 5000)
+
+extraction_bioclim_pak   = terra::extract(bioclim_pak, vect(prediction_points_raw), bind=FALSE, ID=FALSE)
+extraction_elevation_pak = terra::extract(elevation_pak, vect(prediction_points_raw), bind=FALSE, ID=FALSE)
+prediction_points_extracted = cbind( prediction_points_raw, extraction_bioclim_pak, extraction_elevation_pak)
+
+prediction_points = xgb.DMatrix(data = as.matrix(prediction_points_extracted %>% select(-geometry)))
+
+# cleanup
+rm(extraction_bioclim_pak); rm(extraction_elevation_pak);
+
+#for(sp in (modeling_data$species[1]))
+for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species)
+{
+  sp_model = xgb.load(paste("out/", sp, "/" ,sp, ".model", sep = ""))
+  prediction <- predict(sp_model, prediction_points)
+  
+  prediction_as_binary = cbind(prediction, prediction_points_extracted) %>% filter(prediction > 0.60)
+  
+  # TODO: change symbology to observed = x and predicted = o
+  # TODO: add error rms to plot
+  ggplot() + 
+    geom_sf(data = sf::st_as_sf(border_pak), mapping=aes(alpha = 0), show.legend = FALSE) + 
+    geom_sf(data = modeling_data %>% filter(species == sp), mapping = aes(color = 'observed'), size = 2) +
+    geom_sf(data = sf::st_as_sf(prediction_as_binary, crs="epsg:4326"), mapping = aes(color = "predicted > 0.60"))
+  
+  ggsave(paste(sp, ".png", sep=""), path=paste("out/",sp, sep=""))
+  
+  rm(sp); rm(sp_model); rm(prediction); rm(prediction_points_raw); rm(prediction_as_binary)
+}
+
+rm(prediction_points)
+```
+
+```{r, eval=F, include=F}
+for(sp in (modeling_data$species[1]))
+#for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species)
+{
+
+# merge bioclim_pak and elevation_pak into one raster as different layers:
+collection = c(bioclim_pak, elev_pak)
+collection
+elev_pak = resample(elevation_pak, bioclim_pak)
+
+ext(elevation_pak) <- ext(bioclim_pak)
+
+ggplot() + 
+  geom_spatraster(data = collection) +
+  facet_wrap(~lyr) +
+  geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) + 
+  ggtitle("Bioclim data of Pakistan")
+
+  prediction_data<- xgb.DMatrix(data = as.matrix(collection)) 
+
+
+model = xgb.load(paste("out/", sp, "/" ,sp, ".model", sep = ""))
+# use terra to predict directly from spatraster:
+prediction <- predict(model, prediction_data)
+
+prediction <- as.numeric(prediction > 0.5)
+
+
+
+}
+
+vect
+# TODO: Rasterize prediction 
+# Prediction > 0,5 -> 1, > 0,5 -> 0
+```
 
 Interessting species predictions:
 - Tarucus_theophrastus
@@ -691,7 +788,11 @@ Species with small number of samples resuting in no prediction. Where ist the mi
 
 
 
-# ) Species Richness Map
+## ) Species Richness Map
+
+```{r}
+
+```
 
 
 # ) Conclusion
