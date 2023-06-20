@@ -63,7 +63,24 @@ cbind: besser merge benutzen
 #IMAGESLIDESHOW########################
 ```
 
-# ) Irgendwann mal Mathe, jetzt aber noch placeholder!
+# ) Introduction
+
+The following Tutorial is the final assessment of the project seminar “Species Distribution Modeling” at Philipps-University Marburg. In this tutorial  we're going to use the XGBoost algorithm to predict the specie´s distribution of butterflies in Pakistan and create a species richness map of the country. [XGBoost](https://cran.r-project.org/web/packages/xgboost/xgboost.pdf) (eXtreme Gradient Boosting) is a popular machine learning algorithm that belongs to the family of gradient boosting methods. It was developed by [Tianqi Chen](https://tqchen.com/). and uses a combination of gradient boosting, decision trees, regularization, gradient-based optimization, feature importance analysis, parallelization. All this make's it a robust and powerful algorithm that often delivers state-of-the-art results in various machine learning tasks.
+You will be introduced to the basic concepts of XGBoost and you'll be provided with a reproducible workflow to use XGBoost to build classification models.
+
+
+# ) But what's XGBoost?
+
+XGBoost is a ensemble Method same as Random Forrest, this means it combines the output of multiple Trees .But the methods differ in the  way the idividual TRees are build and how the results are combined.
+In Xgb the Output oft he Trees anrent combined equally. Instead xgb uses a method called boosting.
+Boosting combines Weak learner (WEAK LERNERS ERKLÄREN) sequentually so that the new tree corrects the errors oft he previous one.
+To understand this we have to look into some mathematical details. But dont worry when using XGBoost these details will be automated. Nevertheless its importand to understand these details to optimize the algorithm later on.
+
+
+## ) How does it exactly work?
+
+As said XGBoost builds on many concepts to deliver (SOLCHE KRASSEN ERGEBNISSE!?)
+We're going to start with the mathematical base concepts of how XGBoost builds trees.
 
 <style>
   .image-container {
@@ -78,51 +95,63 @@ cbind: besser merge benutzen
     left: 0;
     bottom: 0;
     width: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: rgba(0, 0, 0, 1);
     color: white;
-    padding: 5px;
+    padding: 50px;
     text-align: center;
-    display: none;
+    opacity: 0; /* Initially hidden */
+    transition: opacity 0.4s ease; /* Add transition effect */
   }
   .image-title {
     position: absolute;
     left: 0;
     top: 0;
     width: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: rgba(0, 0, 0, 0.75);
     color: white;
-    padding: 5px;
+    padding: 10px;
     text-align: center;
-    display: none;
+    opacity: 0; /* Initially hidden */
+    transition: opacity 0.4s ease; /* Add transition effect */
+  }
+  .image-container:hover .image-title,
+  .image-container:hover .image-caption,
+  .image-title:hover,
+  .image-caption:hover {
+    opacity: 0.75; /* Fade in on hover */
+  }
+  .image-container:hover .image-title:not(:hover),
+  .image-container:hover .image-caption:not(:hover) {
+    opacity: 0; /* Fade out on hover */
   }
 </style>
 
 <div class="image-container" onclick="toggleImage()">
-  <div class="image-title" id="title1">Schmetterling Nummer 1</div>
-  <img id="image1" src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgoleZF5OOg5AQ8lcwuiFLFBBX7C_byUkbkDTb-dTfIyM8kGxXxGOlGo2eEuxH2bFKePl0SuQJEdX18oY_LyGvnb2ttWhzjoE10Xn85YFzlrtE8AecNp923lYgyuKnJkYh4H3kORCLoDYE3UKzVI6-kUP9AHPKnY6VFxQUKoVl3QuQYXfxEYvdsNdtP/s1600/image1.jpeg" alt="Image 1">
+  <div class="image-title" id="title1">Initial prediction</div>
+  <img id="image1" src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhrAdT9U5a6js_clc19U2MySmViR5NAdMz5acOyTkolprWMt5-xYqLO8LgRgnCtHyt3UdKScfZtVNuoSkWNu8DfJe8aOeH4cxn1uWd7AarUOSMMOT5IPmMYegkyuxvN6qSBp26iFepdLY4FvCGs5XW9aO8rjT7tpsVNaotlPT0TcCWalyMXhddxZHwLxng/s1600/image1.jpeg" alt="Image 1">
   <div class="image-overlay"></div>
-  <div class="image-caption" id="caption1">Erklärung zu Schmetterling 1</div>
+  <div class="image-caption" id="caption1">Green dots represent the presence points. Red dots represent absence points. The black line in the middle is XGBoost's initial prediction. By default, it is 0.5, which means there is a 50% chance to find a butterfly at any given point.</div>
 </div>
 
 <div class="image-container" onclick="toggleImage()">
-  <div class="image-title" id="title2">Title for Image 2</div>
-  <img id="image2" src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiyDKfdGVTeLJ8Lr1ETEK0MXFzikyArJbB91qlmMAKeJ_re9PF6lxiNR9-iZji-DE4s-67bYWD1gOPPYln03Pepm--lw9ZvXiQ5ZXascNJgMDKQ6F32MPjp4qc6iCOw63fZ7qNYIMEnG9ZgyhyUxGzrP6IAFDgwS1v2S4FVaHFSP1bgI9nHe3xDcsBU/s1600/image2.jpeg" alt="Image 2" style="display: none;">
+  <div class="image-title" id="title2">Residuals</div>
+  <img id="image2" src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgDNS7NaU14obTeIdPoNMZGf3zl6y5PtL6RFqW4R9DpyQnJ08VoXx656ubQ4YYmn7SkdDI8TSyfnZtZeLmZ0rdd1gdsOn1vnVsmow7wsfptuMCMm7cxQyxHs6JVcdqhE7pMaJ6e6mP7abHtEkrnOelaK0oIBGpnWhpoEnldhUgK3EFyBqT_8JAyAYIDHg4/s1600/image2.jpeg" alt="Image 2" style="display: none;">
   <div class="image-overlay"></div>
-  <div class="image-caption" id="caption2">Caption for Image 2</div>
+  <div class="image-caption" id="caption2">If the observed value is 1 (i.e., a presence point), the residuals are 0.5. The same applies to values of 0 (i.e., absence points) where the residuals are -0.5.</div>
 </div>
 
 <div class="image-container" onclick="toggleImage()">
-  <div class="image-title" id="title3">Title for Image 3</div>
-  <img id="image3" src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgt40cPg7gYkS4BP_ZhoPznTJd3FLjLgP8SesjkAjPq0-Glj1ZAWqnBK6wNZk4qKED_g-QqKltNXq-38Sl9B7-pinKOML6o5ytWP019pIC9Rr7NLIcaV2dDOpa4QRPFbbJXhp1wPUIgkS8X_U7Y5wiUPbwwMdtLEFP3ktn8h84cEbe0UPJ8hXMcYUjL/s1600/3test.png" alt="Image 3" style="display: none;">
+  <div class="image-title" id="title3">Thresholds</div>
+  <img id="image3" src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgRsgLPZq5EfK0nt-jMyi2dRi3dg0CXvEGYVaKdTCZuKMYVymUEGzV3dTlGZ8biZnw2nZuU64y6bQnEz2MzByxq_oc_KMakRqAqpSuAY8yNvqLS-eGfpLXLRGsFzeDMpGH20jEoejFqcOoL56z3uWfHI-h2-tLvnEPZgCxdjn8VQfCJGsCH7lVY3W1qWWg/s1600/image3.jpeg" alt="Image 3" style="display: none;">
   <div class="image-overlay"></div>
-  <div class="image-caption" id="caption3">Caption for Image 3</div>
+  <div class="image-caption" id="caption3">XGBoost now splits the observations at thresholds that result in the highest gain value.</div>
 </div>
 
 <div class="image-container" onclick="toggleImage()">
-  <div class="image-title" id="title4">Title for Image 4</div>
-  <img id="image4" src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhNhQraYEHQP676HQv_S1uTUwLIkxBj240-18mPrkrVfE3Elir5ebXa2nOLfrD_qAq4-BeCTvnZ5USiADrr5v_tnyWoIflTbzG13TYi8pI1JnGPmkao42IdISsHIxdZDNhldfKrw-c5REfJbChD_OhpgvvczS6S9qbQou2tzF_-LeFBV6R67rO9s29e/s1600/image3.png" alt="Image 4" style="display: none;">
+  <div class="image-title" id="title4">Classification Tree</div>
+  <img id="image4" src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjhM9-yn-gtedu2-iH4cr4yfeC4zVSV-vaXaPCNIL2ZTi1-UdAhdBtopQDIlPkeWj85zUpy5yVD9vMMn-M3wyTMUPcDplwORV6qGLA4SkLhPGsUlzy-YOOvyBUV40M330ReHUC-hVXpn5f0aZeCc2Fyeogfe51Ci8DIMI2qxM1LTqnsbVTWn2pFTIx0nqM/s1600/image4.jpeg" alt="Image 4" style="display: none;">
   <div class="image-overlay"></div>
-  <div class="image-caption" id="caption4">Caption for Image 4</div>
+  <div class="image-caption" id="caption4">XGBoost now splits the observations at thresholds that result in the highest gain value.</div>
 </div>
 
 ```{r, echo=FALSE}
@@ -152,11 +181,6 @@ cbind: besser merge benutzen
 #      overlayNEW.style.display = "none";
 #      captionNEW.style.display = "none";
 #      titleNEW.style.display = "none";
-#########THIS HAS TO BE ADDED TO PREVIOUS IMAGE:
-
-#} else if (imageCounter === PREVIOUSIMAGE) {
-
-#########THIS HAS TO BE CHANGED IN PREVIOUS IMAGE!!!################
 
 #      image1.style.display = "block";
 #      overlay1.style.display = "block";
@@ -167,79 +191,52 @@ cbind: besser merge benutzen
   var imageCounter = 1;
 
   function toggleImage() {
-    var image1 = document.getElementById("image1");
-    var image2 = document.getElementById("image2");
-    var image3 = document.getElementById("image3");
-    var image4 = document.getElementById("image4");
-    var overlay1 = document.getElementById("image1").nextElementSibling;
-    var overlay2 = document.getElementById("image2").nextElementSibling;
-    var overlay3 = document.getElementById("image3").nextElementSibling;
-    var overlay4 = document.getElementById("image4").nextElementSibling;
-    var caption1 = document.getElementById("caption1");
-    var caption2 = document.getElementById("caption2");
-    var caption3 = document.getElementById("caption3");
-    var caption4 = document.getElementById("caption4");
-    var title1 = document.getElementById("title1");
-    var title2 = document.getElementById("title2");
-    var title3 = document.getElementById("title3");
-    var title4 = document.getElementById("title4");
+    var images = [
+      document.getElementById("image1"),
+      document.getElementById("image2"),
+      document.getElementById("image3"),
+      document.getElementById("image4")
+    ];
+    var overlays = [
+      document.getElementById("image1").nextElementSibling,
+      document.getElementById("image2").nextElementSibling,
+      document.getElementById("image3").nextElementSibling,
+      document.getElementById("image4").nextElementSibling
+    ];
+    var captions = [
+      document.getElementById("caption1"),
+      document.getElementById("caption2"),
+      document.getElementById("caption3"),
+      document.getElementById("caption4")
+    ];
+    var titles = [
+      document.getElementById("title1"),
+      document.getElementById("title2"),
+      document.getElementById("title3"),
+      document.getElementById("title4")
+    ];
 
-    if (imageCounter === 1) {
-      image1.style.display = "none";
-      overlay1.style.display = "none";
-      caption1.style.display = "none";
-      title1.style.display = "none";
+    var previousImageIndex = imageCounter - 1;
+    if (previousImageIndex < 0) {
+      previousImageIndex = images.length - 1;
+    }
 
-      image2.style.display = "block";
-      overlay2.style.display = "block";
-      caption2.style.display = "block";
-      title2.style.display = "block";
+    images[previousImageIndex].style.display = "none";
+    overlays[previousImageIndex].style.display = "none";
+    captions[previousImageIndex].style.display = "none";
+    titles[previousImageIndex].style.display = "none";
 
-      imageCounter = 2;
-    } else if (imageCounter === 2) {
-      image2.style.display = "none";
-      overlay2.style.display = "none";
-      caption2.style.display = "none";
-      title2.style.display = "none";
+    images[imageCounter].style.display = "block";
+    overlays[imageCounter].style.display = "block";
+    captions[imageCounter].style.display = "block";
+    titles[imageCounter].style.display = "block";
 
-      image3.style.display = "block";
-      overlay3.style.display = "block";
-      caption3.style.display = "block";
-      title3.style.display = "block";
-
-
-      imageCounter = 3;
-    } else if (imageCounter === 3) {
-      image3.style.display = "none";
-      overlay3.style.display = "none";
-      caption3.style.display = "none";
-      title3.style.display = "none";
-
-      image4.style.display = "block";
-      overlay4.style.display = "block";
-      caption4.style.display = "block";
-      title4.style.display = "block";
-      
-      imageCounter = 4;
-    } else {
-      image4.style.display = "none";
-      overlay4.style.display = "none";
-      caption4.style.display = "none";
-      title4.style.display = "none";
-
-      image1.style.display = "block";
-      overlay1.style.display = "block";
-      caption1.style.display = "block";
-      title1.style.display = "block";
-
-      imageCounter = 1;
-      
+    imageCounter++;
+    if (imageCounter >= images.length) {
+      imageCounter = 0;
     }
   }
 
-  // Show the caption and title of the initial image
-  document.getElementById("caption1").style.display = "block";
-  document.getElementById("title1").style.display = "block";
 </script>
 
 # ) Species Distribution Modeling
