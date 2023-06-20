@@ -375,12 +375,13 @@ rm(species_occurrences_all); rm(species_presence); rm(background_points); rm(spe
 
 Check your results:
 
-Are there presence and absence points inside the modeling_data ? Check if the species column has names (=presence) and NA (=absence) values.
+**Are there presence and absence points inside the modeling_data ?** Check if the species column has species names (=presence) and NA (=absence) values. The data was combined by rbind, so the species_presence data should be at the top and species_absence data at the bottom of the dataframe. Let's check this by using the head() and tail() functions, which print us the first/last 6 rows.
 ```{r Data overview 1}
 head(modeling_data); tail(modeling_data)
 ```
 
-Is the elevation data correctly loaded? Plot a map:
+**Is the elevation data correctly loaded?**
+Plot a map:
 
 ```{r Data overview 2}
 ggplot() + 
@@ -389,7 +390,8 @@ ggplot() +
   scale_fill_hypso_c(name="Elevation")
 ```
 
-Is the bioclim data correctly loaded? Plot a map:
+**Is the bioclim data correctly loaded?**
+Plot a map:
 
 ```{r  Data overview 3, fig.width=15}
 # TODO: set value scale to be individual for every plot.
@@ -409,7 +411,8 @@ ggplot() +
 ```
 
 
-How is the modeling data spatially distributed? Plot a map:
+**How is the modeling data spatially distributed?**
+The Map shows the presence points(=color) and absence points(=grey) of the modelling data.
 
 ```{r  Data overview 4}
 ggplot() + 
@@ -418,7 +421,7 @@ ggplot() +
   ggtitle("Oberserved occurrence of butterflies in Pakistan plus background points")
 ```
 
-** How many samples do the species data have? **
+**How many samples do the species data have?**
 
 ```{r Data overview 5}
 species_nsamples = data.frame(modeling_data) %>% 
