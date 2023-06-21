@@ -240,7 +240,7 @@ function showSlides(n) {
 
 # ) Application of XGBoost in R
 
-```{r}
+```{r, include=F}
 #knitr::knit_exit()
 ```
 
@@ -273,7 +273,7 @@ system(paste("R CMD INSTALL ", getwd(),  "/xgboost_r_gpu_win64_21d95f3d8f23873a7
 
 After installing all needed libaries you need to load them: 
 
-```{r Loading libaries, eval=T, include=F, results='hide'}
+```{r Loading libaries, results='hide'}
 
 # results = "hide"
 # TODO: clean up this code
@@ -287,7 +287,7 @@ require(tidyverse)
 require(tidymodels)
 require(fastDummies)
 
-
+require(sf)
 
 require(xgboost)
 require(terra) #TODO_ check if terry needed?
@@ -303,6 +303,10 @@ require(vip)
 
 ## ) Preparing data
 
+Good Model needs a good data preparation,
+Common way of using presence and absence points
+
+
 Let's start with preparing the data used to train the model. The steps of the following script can be summarized in:
 
 1. Load species occurrence data from csv file
@@ -311,8 +315,9 @@ Let's start with preparing the data used to train the model. The steps of the fo
 4. Generate random points inside pakistan as background points and extend them with a column for species = NA
 5. Combine presence and absence (background) points into a single object
 6. Extract bioclim and elevation values for the modeling_data 
+7. Define a single output variable and clean up environment
 
-```{r Preparing data}
+```{r Preparing data, attr.source='.numberLines'}
 ##################################################
 ##########    Step 1 - Loading data     ##########
 ##################################################
@@ -373,9 +378,11 @@ rm(species_occurrences_all); rm(species_presence); rm(background_points); rm(spe
 
 ## ) Data overview
 
-Check your results:
+Being aware of your data is essentially in data science. You should constantly check the form of your data and adjust it if it does not fit the requirements. While developing code it's recommend to have some code snippets to check that. The following chunks represent a sample of code snippets being used to develop this tutorial. 
 
-**Are there presence and absence points inside the modeling_data ?** Check if the species column has species names (=presence) and NA (=absence) values. The data was combined by rbind, so the species_presence data should be at the top and species_absence data at the bottom of the dataframe. Let's check this by using the head() and tail() functions, which print us the first/last 6 rows.
+**Are there presence and absence points inside the modeling_data ?** 
+Check if the species column has species names (=presence) and NA (=absence) values. The data was combined by rbind, so the species_presence data should be at the top and species_absence data at the bottom of the dataframe. Let's check this by using the `r knitr::inline_expr("head()")` and `r knitr::inline_expr("tail()")` functions, which print us the first/last 6 rows.
+
 ```{r Data overview 1}
 head(modeling_data); tail(modeling_data)
 ```
@@ -395,19 +402,12 @@ Plot a map:
 
 ```{r  Data overview 3, fig.width=15}
 # TODO: set value scale to be individual for every plot.
+# TODO: fig.width ?
 ggplot() + 
   geom_spatraster(data = bioclim_pak) +
   facet_wrap(~lyr) +
   geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) + 
   ggtitle("Bioclim data of Pakistan")
-
-
-#for (layer in names(bioclim_pak)) {
-#  ggplot() + 
-#    geom_spatraster(data = bioclim_pak[layer]) +
-#    geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) + 
-#    ggtitle(paste("Bioclim", layer, "data of Pakistan")) 
-#}
 ```
 
 
@@ -416,7 +416,7 @@ The Map shows the presence points(=color) and absence points(=grey) of the model
 
 ```{r  Data overview 4}
 ggplot() + 
-  geom_sf(data = sf::st_as_sf(border_pak), mapping=aes(alpha = 0), show.legend = FALSE) + 
+  geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) +
   geom_sf(data = sf::st_as_sf(modeling_data), mapping=aes(color=species), show.legend = FALSE) +
   ggtitle("Oberserved occurrence of butterflies in Pakistan plus background points")
 ```
@@ -441,7 +441,11 @@ ggplot(species_nsamples, aes(n_samples)) +
 ## ) Training the model
 
 ```{r Traning the model}
-#for(sp in (modeling_data$species[16]))
+
+# use this line to select a subset of species to speed up runtime during development
+modeling_data = modeling_data %>% filter( species %in% c(species_nsamples$species[1:50], NA) )
+
+
 for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species)
 {
   message(paste("Training model for species", sp))
@@ -459,19 +463,21 @@ for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$spec
             mutate(species_occurrence = ifelse(is.na(species_occurrence), 0, species_occurrence)) %>%
             mutate(species_occurrence = factor(species_occurrence))
   
+  
   training_data <- xgb.DMatrix(data = as.matrix(data %>% select(-species_occurrence, -geometry)), 
                                label = as.matrix(data %>% select(species_occurrence))
                                )
   # check the parameters here https://xgboost.readthedocs.io/en/latest/paramet er.html
+  # TODO: include all parameters, comment not used out
   xgb_model <- xgb.train(data = training_data,
-                       verbosity = 3, # 0 (silent), 1 (warning), 2 (info), 3 (debug)
+                       verbosity = 0, # 0 (silent), 1 (warning), 2 (info), 3 (debug)
                        
                        eta = 0.3, # learning rate, default = 0.3
-                       gamma = 0, # Minimum loss reduction, default = 0
+                       gamma = 0.3, # Minimum loss reduction, default = 0
                        max.depth = 6, # default = 6
                        #sampling_method = "gradient_based", # default = uniform
                        #lampda = 1,
-                       alpha = 0,
+                       #alpha = 0,
                        #three_method = "gpu_hist",
                        
                        #nthread = 2, 
@@ -500,189 +506,6 @@ for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$spec
 
 ```
 
-
-```{r, eval=F, include=F}
- # tracking runtime
-start.time <- Sys.time()
-# current runtime for all species ~35min
-
-# use this for development to shorten runtime
-#final_modeling_data_save = final_modeling_data
-#final_modeling_data = final_modeling_data_save
-#final_modeling_data = final_modeling_data %>% filter(species %in% species_names[1:50] | is.na(species))
-
-for( sp in (final_modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species )
-{
-  print(paste("Sarting compute for species:", sp))
-  tryCatch(
-    {
-      # TODO: select only used cols
-      data = final_modeling_data %>% 
-        filter(species == sp | is.na(species)) %>% 
-        select(ends_with(sp), matches("elv"), starts_with("bio")) %>%
-        rename_at( 1, ~"species_occurrence") %>%
-        mutate(species_occurrence = ifelse(is.na(species_occurrence), 0, species_occurrence)) %>%
-        mutate(species_occurrence = factor(species_occurrence))
-      
-      #str(data)
-      #message(data)
-      
-      # using "final_modeling_data" because of missing geometry in "data"
-      ggplot() + 
-        geom_sf(data = sf::st_as_sf(border), mapping=aes(alpha = 0), show.legend = FALSE) + 
-        geom_sf(data = sf::st_as_sf(final_modeling_data %>% filter(species == sp)), mapping=aes(color=species))
-      # Save the plot for every species in out/<species>/<species>.png
-      ggsave(paste(sp, ".png", sep=""), path=paste("out/",sp, sep=""))
-      
-      ########## Training the model ##########
-      xgboost_recipe <- 
-        recipe( species_occurrence ~ . , data = data)
-      
-      xgboost_model <- 
-        boost_tree(
-        trees = 500,
-        min_n = 2,
-        mtry = 3,
-        learn_rate = 0.01
-      ) %>%
-        set_engine("xgboost") %>%
-        set_mode("classification")
-
-      xgboost_workflow <- workflow() %>% add_recipe(xgboost_recipe) %>% add_model(xgboost_model)
-
-      xgboost_fit <- xgboost_workflow %>% 
-        fit(data = data)
-      
-      xgboost_fit %>% 
-        extract_fit_parsnip() %>%
-        vip(geom = "point", num_features = 15)
-      ggsave(paste(sp, "_fit.png", sep=""), path=paste("out/",sp, sep=""))
-      
-      
-      # TODO: create new random point dataset of pakistan with environmental data and high density 
-      # for a better spatial resultion of the prediction
-      predicted = augment(xgboost_fit, final_modeling_data)
-      
-      predicted = sf::st_as_sf( predicted %>% select(!starts_with("species_")) )
-
-      ggplot() + 
-        geom_spatraster(data = elevation) + 
-        scale_fill_hypso_c() + 
-        geom_sf(data = sf::st_as_sf(border), mapping=aes(alpha = 0), show.legend = FALSE) +
-        #geom_sf(data = sf::st_as_sf(data), mapping = aes(color = 'bg')) + 
-        geom_sf(data = predicted %>% filter(species == sp), mapping = aes(color = 'observed'), size = 5) +
-        geom_sf(data = predicted %>% filter(.pred_class == 1), mapping = aes(color = 'predicted'), size = 3 )
-      
-      ggsave(paste(sp, "_model.png", sep=""), path=paste("out/",sp, sep=""))
-      
-    },
-    error=function(cond)
-    {
-      message("Error:")
-      message(cond)
-    },
-    warning=function(cond)
-    {
-      message("Warning:")
-      message(cond)
-    },
-    finally={
-      message("finally")
-    }
-  )
-  print("finished")
-}
-
-# tracking runtime
-end.time <- Sys.time()
-diff <- end.time - start.time
-diff
-
-```
-
-```{r, eval=F, include=F, fig.width=15}
-
-# only for development, filter to one species ## DO not filter here since absence points will be filtered out
-modeling_data_save = modeling_data
-modeling_data = modeling_data %>% select(c(-geometry, -species))
-modeling_data
-str(modeling_data)
-# resulst in getting a dataset with 52 samples pf aglais caschirensis
-
-predic_colname <- paste('species_', species_names[6], sep="")
-
-# taken from https://www.tidymodels.org/start/recipes/
-xgboost_recipe <- 
-  recipe( species_Aglais_caschmirensis ~ . , data = modeling_data)
-
-#summary(sdm_recipe)
-
-#prep(sdm_recipe)
-
-xgboost_model <- 
-  boost_tree(
-    trees = 1000,
-    min_n = 2,
-    mtry = 3,
-    learn_rate = 0.01
-  ) %>%
-  set_engine("xgboost") %>%
-  set_mode("classification")
-
-xgboost_workflow <- workflow() %>% add_recipe(xgboost_recipe) %>% add_model(xgboost_model)
-
-xgboost_fit <- xgboost_workflow %>% 
-  fit(data = modeling_data)
-
-
-library(vip)
-xgboost_fit %>% 
-  extract_fit_parsnip() %>%
-  vip(geom = "point", num_features = 15)
-
-
-out = augment(xgboost_fit, modeling_data_save )
-
-out
-
-out = sf::st_as_sf(out)
-
-ggplot() + 
-  geom_spatraster(data = elevation) + 
-  scale_fill_hypso_c() + 
-  geom_sf(data = sf::st_as_sf(border), mapping=aes(alpha = 0), show.legend = FALSE) +
-  geom_sf(data = sf::st_as_sf(modeling_data_save), mapping = aes(color = 'bg')) + 
-  geom_sf(data = out %>% filter(species_Aglais_caschmirensis == 1), mapping = aes(color = 'observed'), size = 5) +
-  geom_sf(data = out %>% filter(.pred_class == 1), mapping = aes(color = 'predicted'), size = 3 )
-
-
-
-```
-
-```{r, eval=F, include=F}
-###             ###
-### not working ###
-###             ###  
-
-modeling_data
-
-dtrain <- 
-  xgb.DMatrix(
-    data = as.matrix(modeling_data %>% select(-species_Aglais_caschmirensis)), 
-    label = as.matrix(modeling_data %>% select(species_Aglais_caschmirensis))
-    )
-
-
-xgb_model <- xgboost(data = dtrain, max.depth = 2, eta = 1, nthread = 2, nrounds = 200, objective = "binary:logistic", verbose = T)
-
-xgb.plot.shap( data = as.matrix(modeling_data %>% select(-species_Aglais_caschmirensis)), model = xgb_model, top_n=7)
-
-#xgboost_pred <- predict(model, as.matrix(species_absence))
-
-
-
-```
-
 ## ) Prediction
 
 Steps:
@@ -691,78 +514,45 @@ Steps:
 3. Predict occurrence based on the build models
 3. Rasterrize points
 
-```{r}
-# TODO: vectorize raster of pakistan
-prediction_points_raw = sf::st_sample(border_pak, type="regular", size = 5000)
+```{r Prediction}
+prediction_stack = list()
 
-extraction_bioclim_pak   = terra::extract(bioclim_pak, vect(prediction_points_raw), bind=FALSE, ID=FALSE)
-extraction_elevation_pak = terra::extract(elevation_pak, vect(prediction_points_raw), bind=FALSE, ID=FALSE)
-prediction_points_extracted = cbind( prediction_points_raw, extraction_bioclim_pak, extraction_elevation_pak)
+# gen stack from rasters bioclim_pak and elevation_pak
+elev_pak = resample(elevation_pak, bioclim_pak)
+ext(elevation_pak) <- ext(bioclim_pak)
+prediction_stack = c(bioclim_pak, elev_pak)
 
-prediction_points = xgb.DMatrix(data = as.matrix(prediction_points_extracted %>% select(-geometry)))
-
-# cleanup
-rm(extraction_bioclim_pak); rm(extraction_elevation_pak);
-
-#for(sp in (modeling_data$species[1]))
 for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species)
 {
   sp_model = xgb.load(paste("out/", sp, "/" ,sp, ".model", sep = ""))
-  prediction <- predict(sp_model, prediction_points)
   
-  prediction_as_binary = cbind(prediction, prediction_points_extracted) %>% filter(prediction > 0.60)
+  # We need to make a custom predict function for terra::predict() since xgboost didn't take a data.frame as input. See https://stackoverflow.com/questions/71947124/predict-xgboost-model-onto-raster-stack-yields-error
+  prediction_function <- function(model, data, ...) {
+    predict(model, newdata=as.matrix(data), ...)
+  }
   
-  # TODO: change symbology to observed = x and predicted = o
-  # TODO: add error rms to plot
-  ggplot() + 
-    geom_sf(data = sf::st_as_sf(border_pak), mapping=aes(alpha = 0), show.legend = FALSE) + 
-    geom_sf(data = modeling_data %>% filter(species == sp), mapping = aes(color = 'observed'), size = 2) +
-    geom_sf(data = sf::st_as_sf(prediction_as_binary, crs="epsg:4326"), mapping = aes(color = "predicted > 0.60"))
+  prediction_raster = terra::predict(object=prediction_stack,
+                       model=sp_model,
+                       fun=prediction_function
+  )
   
-  ggsave(paste(sp, ".png", sep=""), path=paste("out/",sp, sep=""))
+  # prediciton_raster = terra::clamp(prediction_raster, lower=10, values=FALSE)
   
-  rm(sp); rm(sp_model); rm(prediction); rm(prediction_points_raw); rm(prediction_as_binary)
+  terra::writeRaster(prediction_raster, paste("out/", sp, "/" ,sp, ".tif", sep = ""), overwrite=TRUE)
+  #terra::writeRaster(prediciton_raster$lyr1, "test.tif", overwrite=TRUE, datatype="FLT8S" )
+  
+  plot(prediction_raster)
+  
+  ggplot() + geom_spatraster(data=prediction_raster) +
+    #scale_fill_binned() +
+    #scale_alpha() + 
+    #scale_fill_gradient(low="green", high="red") + 
+    geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE)
+  
+  #gsave(paste(sp, ".png", sep=""), path=paste("out/",sp, sep=""))
+  
+  # TODO: clean up in for loop and at end of chunk
 }
-
-rm(prediction_points)
-```
-
-```{r, eval=F, include=F}
-for(sp in (modeling_data$species[1]))
-#for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species)
-{
-
-# merge bioclim_pak and elevation_pak into one raster as different layers:
-collection = c(bioclim_pak, elev_pak)
-collection
-elev_pak = resample(elevation_pak, bioclim_pak)
-
-ext(elevation_pak) <- ext(bioclim_pak)
-
-ggplot() + 
-  geom_spatraster(data = collection) +
-  facet_wrap(~lyr) +
-  geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) + 
-  ggtitle("Bioclim data of Pakistan")
-
-  prediction_data<- xgb.DMatrix(data = as.matrix(collection)) 
-
-
-model = xgb.load(paste("out/", sp, "/" ,sp, ".model", sep = ""))
-# use terra to predict directly from spatraster:
-prediction <- predict(model, prediction_data)
-
-prediction <- as.numeric(prediction > 0.5)
-
-
-
-}
-
-# TODO: show two different species with prediction variance
-
-vect
-# TODO: Rasterize prediction 
-# Prediction > 0,5 -> 1, > 0,5 -> 0
 ```
 
 Interessting species predictions:
@@ -777,13 +567,59 @@ Cut samples with polygon of pakistan!
 Species with small number of samples resuting in no prediction. Where ist the min the predicton works? Check Species with 1, 2, 3, 4, 5 Samples and so on 
 
 
+```{r prediction result sp-1}
+# TODO: show results of two species here and explain those
+```
 
 
+```{r prediction result sp-2}
+# TODO: show results of two species here and explain those
+```
 
 
 ## ) Species Richness Map
 
-```{r}
+
+https://babichmorrowc.github.io/post/2019-04-12-sdm-threshold/
+
+
+```{r species richness map}
+# Step 1  generate Raster Stack
+l_species = list()
+
+for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species)
+{
+  # get species raster from file system
+  file = paste("./out/",sp,"/",sp,".tif", sep = "" )
+  r = rast(file)
+  
+  # reclassify raster:
+  # value < threshold = 0
+  # value > threshold = 1
+  threshold = 0.75
+  m <- c(0, threshold, 0,
+         threshold, 1, 1)
+  m <- matrix(m, ncol=3, byrow=TRUE)
+  
+  r = terra::classify(r, m, include.lowest = TRUE)
+
+  l_species[sp] = r
+  #plot(r)
+  
+}
+
+stack = terra::rast(l_species)
+stack = sum(stack)
+stack = terra::mask(stack, border_pak)
+
+# TODO: mask stack to pakistan
+
+ggplot() + 
+  geom_spatraster(data = stack) +
+  scale_fill_hypso_c(palette="spain", name="N° of species" ) +
+  #scale_fill_hypso_b(name="N° of species") +
+  geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) +
+  ggtitle("Species richness of butterflies in Pakistan")
 
 ```
 
