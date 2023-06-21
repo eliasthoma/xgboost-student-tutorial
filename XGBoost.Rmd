@@ -543,13 +543,15 @@ for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$spec
   
   plot(prediction_raster)
   
-  ggplot() + geom_spatraster(data=prediction_raster) +
+  ggplot() + geom_spatraster(data=prediction_raster, name="Prediction") +
     #scale_fill_binned() +
     #scale_alpha() + 
     #scale_fill_gradient(low="green", high="red") + 
-    geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE)
+    geom_sf(data = modeling_data %>% filter(species == sp), mapping = aes(color = 'Observed'), size = 1, shape=1 ) +
+    geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) +
+    ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
   
-  #gsave(paste(sp, ".png", sep=""), path=paste("out/",sp, sep=""))
+  ggsave(paste(sp, "_prediction.png", sep=""), path=paste("out/",sp, sep=""))
   
   # TODO: clean up in for loop and at end of chunk
 }
@@ -568,12 +570,37 @@ Species with small number of samples resuting in no prediction. Where ist the mi
 
 
 ```{r prediction result sp-1}
-# TODO: show results of two species here and explain those
+sp = "Aglais_caschmirensis"
+
+prediction = rast(paste("./out/",sp,"/",sp,".tif", sep = "" ))
+prediction = terra::mask(prediction, border_pak)
+
+ggplot() + geom_spatraster(data=prediction, name="Prediction") +
+  #scale_fill_binned() +
+  #scale_alpha() + 
+  scale_fill_gradient(low="green", high="red") + 
+  geom_sf(data = modeling_data %>% filter(species == sp), mapping = aes(color = 'Observed'), size = 1, shape=1 ) +
+  geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) +
+  ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
 ```
 
 
 ```{r prediction result sp-2}
-# TODO: show results of two species here and explain those
+sp = "Argynnis_pandora"
+sp = "Aulocera_swaha"
+sp = "Colias_erate"
+sp = "Colotis_calais"
+
+prediction = rast(paste("./out/",sp,"/",sp,".tif", sep = "" ))
+prediction = terra::mask(prediction, border_pak)
+
+ggplot() + geom_spatraster(data=prediction, name="Prediction") +
+  #scale_fill_binned() +
+  #scale_alpha() + 
+  scale_fill_gradient(low="green", high="red") + 
+  geom_sf(data = modeling_data %>% filter(species == sp), mapping = aes(color = 'Observed'), size = 1, shape=1 ) +
+  geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) +
+  ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
 ```
 
 
@@ -620,6 +647,8 @@ ggplot() +
   #scale_fill_hypso_b(name="N° of species") +
   geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) +
   ggtitle("Species richness of butterflies in Pakistan")
+
+ggsave("SpeciesRichnessMap.png", "out")
 
 ```
 
