@@ -34,12 +34,12 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v3
       - name: Rename file 
-        run: mv XGBoost.html index.html
+        run: mv XGBoost.html www/index.html
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v1
         with:
           # Upload entire repository
-          path: '.'
+          path: 'www'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v2
