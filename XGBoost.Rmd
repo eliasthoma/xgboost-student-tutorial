@@ -128,7 +128,7 @@ pre { /* Code block - determines code spacing between lines */
 </style>
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(results = "hold")
 ```
 # ) Dummy notes area
 
@@ -139,6 +139,13 @@ https://www.youtube.com/watch?v=gKyUucJwD8U&list=WL&index=71
 https://www.geeksforgeeks.org/xgboost/
 
 cbind: besser merge benutzen
+
+Interaktive Table:
+datatable(modeling_data)
+
+
+
+Senay, S. D., Worner, S. P., & Ikeda, T. (2013). Novel three-step pseudo-absence selection technique for improved species distribution modelling. PloS one, 8(8), e71218. Online availible under https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3742778/pdf/pone.0071218.pdf. Last checked 02.06.2022.
 
 # ) Introduction
 
@@ -250,21 +257,20 @@ function showSlides(n) {
 Before you dive into the code you need to install some packages this script will use: 
 
 ```{r Install packages, eval=FALSE}
-install.packages('tidyverse')
+install.packages('terra')
 install.packages("ggplot2")
-install.packages('tidyterra')
 install.packages('fastDummies')
-install.packages('tidymodels')
+install.packages("tidyterra")
 
-#if(!require(dplyr)){install.packages('dplyr')}
+
 ```
 
 The XGBoost package can by installed in two different ways. First there is the default package from CRAN, which will do it in most situations.
-```{r Setup from CRAN, eval=FALSE, include=TRUE}
+```{r Setup from CRAN, eval=F}
 install.packages("xgboost")
 ```
 But if you are dealing with large data sets you may want to use GPU acceleration. Therefor you have to use a prebuild package from GITHUB (https://github.com/dmlc/xgboost/releases). Download it, place it in the same folder as this script und run the commands below.
-```{r Setup for GPU acceleration, eval=FALSE, include=TRUE}
+```{r Setup for GPU acceleration, eval=F}
 # Install dependencies
 system('R -q -e "install.packages(c(\'data.table\', \'jsonlite\'))"') # TODO: convert this to r code
 # Install XGBoost
@@ -273,32 +279,21 @@ system(paste("R CMD INSTALL ", getwd(),  "/xgboost_r_gpu_win64_21d95f3d8f23873a7
 
 After installing all needed libaries you need to load them: 
 
-```{r Loading libaries, results='hide'}
-
-# results = "hide"
-# TODO: clean up this code
-# TODO: disable output? but run it while knitting
+```{r Loading libaries, results='hide', message=F}
+# TODO: use this line:
+# if(!require(dplyr)){install.packages('dplyr')}
 
 require(dplyr)      # easy dataframe modification
+require(ggplot2)    # plotting
+
 require(geodata)    # downloading geospatial world dataset made easy
+require(sf)         # simple geospatial features
+require(terra)
 
+require(tidyterra)  # plot terra object with ggplot
 
-require(tidyverse)
-require(tidymodels)
-require(fastDummies)
-
-require(sf)
-
-require(xgboost)
-require(terra) #TODO_ check if terry needed?
-require(geodata)
-require(dplyr)
-require(tidyverse)
-require(ggplot2)
-require(tidyterra)
-require(fastDummies)
-require(tidymodels)
-require(vip)
+require(fastDummies)# create binary factor columns from character column
+require(xgboost)    # our modeling libary
 ```
 
 ## ) Preparing data
@@ -443,7 +438,7 @@ ggplot(species_nsamples, aes(n_samples)) +
 ```{r Traning the model}
 
 # use this line to select a subset of species to speed up runtime during development
-modeling_data = modeling_data %>% filter( species %in% c(species_nsamples$species[1:50], NA) )
+modeling_data = modeling_data %>% filter( species %in% c(species_nsamples$species[10], NA) )
 
 
 for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species)
@@ -497,7 +492,7 @@ for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$spec
   xgb.ggplot.shap.summary(data = as.matrix(data %>% select(-species_occurrence, -geometry)), model = xgb_model )
   ggsave(paste(sp, "_shap.png", sep=""), path=paste("out/",sp, sep=""))
 
-  # TODO: create folder beforhand
+  # folder needs to exist befor, ggsave() automaically creates those, if the not exist
   xgb.save(xgb_model, paste("out/", sp, "/" ,sp, ".model", sep = ""))
   
   # Cleanup before next iteration
@@ -575,21 +570,26 @@ sp = "Aglais_caschmirensis"
 prediction = rast(paste("./out/",sp,"/",sp,".tif", sep = "" ))
 prediction = terra::mask(prediction, border_pak)
 
-ggplot() + geom_spatraster(data=prediction, name="Prediction") +
-  #scale_fill_binned() +
-  #scale_alpha() + 
-  scale_fill_gradient(low="green", high="red") + 
-  geom_sf(data = modeling_data %>% filter(species == sp), mapping = aes(color = 'Observed'), size = 1, shape=1 ) +
-  geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) +
+ggplot() + geom_spatraster(data = prediction, name = "Prediction") +
+  scale_fill_gradient(low = "black", high = "white") + 
+  geom_sf(data = modeling_data %>% filter(species == sp),
+          mapping = aes(color = 'Observed'),
+          size = 1,
+          shape = 1 ) +
+  geom_sf(data = sf::st_as_sf(border_pak),
+          fill = NA, show.legend=FALSE) +
   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
+
+rm(sp); rm(prediction)
 ```
 
 
 ```{r prediction result sp-2}
-sp = "Argynnis_pandora"
-sp = "Aulocera_swaha"
+#sp = "Argynnis_pandora"
+#sp = "Aulocera_swaha"
 sp = "Colias_erate"
-sp = "Colotis_calais"
+#sp = "Colotis_calais"
+#sp = "Colias_stoliczkana"
 
 prediction = rast(paste("./out/",sp,"/",sp,".tif", sep = "" ))
 prediction = terra::mask(prediction, border_pak)
@@ -597,11 +597,15 @@ prediction = terra::mask(prediction, border_pak)
 ggplot() + geom_spatraster(data=prediction, name="Prediction") +
   #scale_fill_binned() +
   #scale_alpha() + 
-  scale_fill_gradient(low="green", high="red") + 
+  scale_fill_gradient(low="black", high="white") + 
   geom_sf(data = modeling_data %>% filter(species == sp), mapping = aes(color = 'Observed'), size = 1, shape=1 ) +
   geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) +
   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
 ```
+
+For how many species is no prediction made?
+-> count(max(raster) = 0)
+
 
 
 ## ) Species Richness Map
@@ -612,6 +616,7 @@ https://babichmorrowc.github.io/post/2019-04-12-sdm-threshold/
 
 ```{r species richness map}
 # Step 1  generate Raster Stack
+# l_species will consist of all 421 species prediction rasters -> RAM usage will be insane ~ 30GB
 l_species = list()
 
 for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species)
@@ -648,14 +653,18 @@ ggplot() +
   geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) +
   ggtitle("Species richness of butterflies in Pakistan")
 
-ggsave("SpeciesRichnessMap.png", "out")
+ggsave("SpeciesRichnessMap.png", path="out") 
 
 ```
-
 
 # ) Conclusion
 
 How was Computing Speed compared to other methods? 
 
+# ) Sources
 
-print sessioninfo
+# ) Troubleshooting & sessionInfo
+```{r}
+sessionInfo()
+```
+
