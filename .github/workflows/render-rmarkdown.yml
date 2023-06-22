@@ -28,7 +28,7 @@ jobs:
       - run: ls -l
 
       - name: Render Rmarkdown XGBoost.rmd
-        run: Rscript -e 'rmarkdown::render("XGBoost.rmd")'
+        run: Rscript -e 'rmarkdown::render("XGBoost.Rmd")'
 
       - name: Commit Results
         run: |
