@@ -7,6 +7,8 @@ output:
     number_section: TRUE
     toc: TRUE
     toc_float: TRUE
+params:
+    dev: TRUE
 ---
 
 <style type="text/css">
@@ -243,14 +245,13 @@ function showSlides(n) {
 # ) Extreme Gradient Boosting Algorithem
 
 
+```{r}
+# rmarkdown::render("./XGBoost.rmd", params = list(dev=FALSE)
+```
+
 
 
 # ) Application of XGBoost in R
-
-```{r, include=F}
-#knitr::knit_exit()
-```
-
 
 ## ) Prerequisites
 
@@ -261,13 +262,11 @@ install.packages('terra')
 install.packages("ggplot2")
 install.packages('fastDummies')
 install.packages("tidyterra")
-
-
 ```
 
 The XGBoost package can by installed in two different ways. First there is the default package from CRAN, which will do it in most situations.
-```{r Setup from CRAN, eval=F}
-install.packages("xgboost")
+```{r Setup from CRAN}
+if(!require(xgboost)){install.packages('xgboost')}
 ```
 But if you are dealing with large data sets you may want to use GPU acceleration. Therefor you have to use a prebuild package from GITHUB (https://github.com/dmlc/xgboost/releases). Download it, place it in the same folder as this script und run the commands below.
 ```{r Setup for GPU acceleration, eval=F}
@@ -437,8 +436,10 @@ ggplot(species_nsamples, aes(n_samples)) +
 
 ```{r Traning the model}
 
-# use this line to select a subset of species to speed up runtime during development
-modeling_data = modeling_data %>% filter( species %in% c(species_nsamples$species[10], NA) )
+# speed up runtime in dev environment, by only modeling 15 species
+if(params$dev) {
+  modeling_data = modeling_data %>% filter( species %in% c(species_nsamples$species[1:15], NA) ) 
+}
 
 
 for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species)
@@ -462,7 +463,8 @@ for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$spec
   training_data <- xgb.DMatrix(data = as.matrix(data %>% select(-species_occurrence, -geometry)), 
                                label = as.matrix(data %>% select(species_occurrence))
                                )
-  # check the parameters here https://xgboost.readthedocs.io/en/latest/paramet er.html
+  
+  # check the parameters here https://xgboost.readthedocs.io/en/latest/parameter.html
   # TODO: include all parameters, comment not used out
   xgb_model <- xgb.train(data = training_data,
                        verbosity = 0, # 0 (silent), 1 (warning), 2 (info), 3 (debug)
