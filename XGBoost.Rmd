@@ -8,7 +8,8 @@ output:
     toc: TRUE
     toc_float: TRUE
 params:
-    dev: TRUE
+    dev: TRUE # shortens knit time, by only modeling one species
+    output_plots: FALSE
 ---
 
 <style type="text/css">
@@ -265,21 +266,31 @@ install.packages("tidyterra")
 
 The XGBoost package can by installed in two different ways. First there is the default package from CRAN, which will do it in most situations.
 ```{r Setup from CRAN}
-if(!require(xgboost)){install.packages('xgboost')}
+if(!require(xgboost)){install.packages("xgboost")}
 ```
-But if you are dealing with large data sets you may want to use GPU acceleration. Therefor you have to use a prebuild package from GITHUB (https://github.com/dmlc/xgboost/releases). Download it, place it in the same folder as this script und run the commands below.
+But if you are dealing with large data sets you may want to use GPU acceleration. Therefor you have to use a prebuild package from GITHUB (https://github.com/dmlc/xgboost/releases). Download it, place it in the same folder as this script and run the commands below.
 ```{r Setup for GPU acceleration, eval=F}
+## !! Installation on windows fails with "Warnung in system("sh ./configure.win") 'sh' not found"
+## Workaround: Copy src/xgboost.dll from archive into your r library manually e.g C:\Users\%USERNAME%\AppData\Local\R\win-library\4.2\xgboost\libs\x64
+ 
+detach("package:xgboost")
+
 # Install dependencies
-system('R -q -e "install.packages(c(\'data.table\', \'jsonlite\'))"') # TODO: convert this to r code
+install.packages(c("data.table", "jsonlite"))
 # Install XGBoost
 system(paste("R CMD INSTALL ", getwd(),  "/xgboost_r_gpu_win64_21d95f3d8f23873a76f8afaad0fee5fa3e00eafe.tar.gz", sep=""))
+
+install.packages(paste(getwd(),"/xgboost_r_gpu_win64_21d95f3d8f23873a76f8afaad0fee5fa3e00eafe.tar.gz", sep=""), repos=NULL)
+
+require(xgboost)
+
 ```
 
 After installing all needed libaries you need to load them: 
 
-```{r Loading libaries, results='hide', message=F}
+```{r Loading libaries, results="hide", message=F}
 # TODO: use this line:
-# if(!require(dplyr)){install.packages('dplyr')}
+# if(!require(dplyr)){install.packages("dplyr")}
 
 require(dplyr)      # easy dataframe modification
 require(ggplot2)    # plotting
@@ -310,7 +321,7 @@ Let's start with preparing the data used to train the model. The steps of the fo
 6. Extract bioclim and elevation values for the modeling_data 
 7. Define a single output variable and clean up environment
 
-```{r Preparing data, attr.source='.numberLines'}
+```{r Preparing data, attr.source=".numberLines"}
 ##################################################
 ##########    Step 1 - Loading data     ##########
 ##################################################
@@ -321,7 +332,7 @@ species_occurrences_all = sf::st_as_sf(species_occurrences_all, coords=c("x", "y
 
 # TODO: check level of border_pak data, is this the top level border?
 # political border of pakistan
-border_pak <- geodata::gadm(country='PAK', level=0, path='./data')
+border_pak <- geodata::gadm(country="PAK", level=0, path="./data")
 
 # bioclim data from pakistan
 bioclim_pak = geodata::worldclim_country(country="PAK", res=10, var="bio", path="data/", version = "2.1")
@@ -329,7 +340,7 @@ names(bioclim_pak)<-substr(names(bioclim_pak), 11, 20) # TODO: rename to mare me
 bioclim_pak = terra::mask(bioclim_pak, border_pak)
 
 # elevation data form pakistan
-elevation_pak = geodata::elevation_30s(country='PAK', path='data/')
+elevation_pak = geodata::elevation_30s(country="PAK", path="data/")
 
 
 ##################################################
@@ -368,6 +379,14 @@ modeling_data = modeling_data_extracted
 
 rm(species_occurrences_all); rm(species_presence); rm(background_points); rm(species_absence); rm(modeling_data_); rm(extraction_bioclim_pak); rm(extraction_elevation_pak); rm(modeling_data_extracted)
 ```
+
+```{r dev env}
+# speed up runtime in dev environment, by only modeling one species
+if(params$dev) {
+  modeling_data = modeling_data %>% filter( species %in% c("Aglais_caschmirensis", "Pyrgus_alpinus", "Melitaea_mixta", "Lasiommata_tarbena", "Deudoryx_epijarbas", "Anaphaeis_aurota", NA) ) 
+}
+```
+
 
 ## ) Data overview
 
@@ -428,18 +447,46 @@ ggplot(species_nsamples, aes(n_samples)) +
        annotate(x=mean(species_nsamples$n_samples), y=+Inf, label=paste("Mean:",round(mean(species_nsamples$n_samples),2)), vjust=3, geom="label") +
        labs(x = "Number of Samples", y = "Number of Species")
 
+rm(species_nsamples)
+
 ```
 
 
 ## ) Training the model
 
+```{r xgboost parameters}
+
+xgboost_params <- data.frame("dataset" = character(),
+                             "nrounds" = numeric(),
+                             "eta" = numeric(), 
+                             "max_depth" = numeric(), 
+                             "subsample" = numeric(), 
+                             "gamma" = numeric(),
+                             "alpha" = numeric(),
+                             "lambda" = numeric(),
+                             "colsample_bytree" = numeric(), 
+                             "min_child_weight" = numeric()
+                             )
+
+xgboost_params <- xgboost_params %>% add_row(dataset = "default", eta = 0.3, max_depth = 6, gamma = 0, alpha = 0, lambda = 1, subsample = 1, colsample_bytree = 1, min_child_weight = 1)
+
+
+# Parameter taken from https://esajournals.onlinelibrary.wiley.com/doi/full/10.1002/ecm.1486
+xgboost_params <- xgboost_params %>% add_row(dataset = "literature", nrounds = 1000, eta = 0.001, max_depth = 5, subsample = 0.75, gamma = 0, alpha = 0, lambda = 1, colsample_bytree = 0.8, min_child_weight = 1)
+
+
+xgboost_params <- xgboost_params %>% add_row(dataset = "tuned", nrounds = 2000, eta = 0.01, max_depth = 5, subsample = 1, gamma = 0, alpha = 0, lambda = 1, colsample_bytree = 1, min_child_weight = 1)
+
+
+
+print(xgboost_params)
+```
+
+
 ```{r Traning the model}
 
-# speed up runtime in dev environment, by only modeling 15 species
-if(params$dev) {
-  modeling_data = modeling_data %>% filter( species %in% c(species_nsamples$species[1:15], NA) ) 
-}
-
+# Instead of training one model for each species manually, there is also the option to do a multi-output model.
+# See https://xgboost.readthedocs.io/en/latest/tutorials/multioutput.html for additional info
 
 for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species)
 {
@@ -447,7 +494,7 @@ for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$spec
   
   # filter modeling data to current species, don't forget the absence points!
   data = modeling_data %>% filter(species == sp | is.na(species))
-  data <- dummy_columns(data, select_columns = 'species',
+  data <- dummy_columns(data, select_columns = "species",
                         ignore_na = TRUE, 
                         remove_selected_columns = TRUE)
   
@@ -460,45 +507,48 @@ for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$spec
   
   
   training_data <- xgb.DMatrix(data = as.matrix(data %>% select(-species_occurrence, -geometry)), 
-                               label = as.matrix(data %>% select(species_occurrence))
+                               label = as.matrix(data %>% select(species_occurrence))  
                                )
   
+   p <- as.list(xgboost_params[3,])
+   
   # check the parameters here https://xgboost.readthedocs.io/en/latest/parameter.html
   # TODO: include all parameters, comment not used out
   xgb_model <- xgb.train(data = training_data,
-                       verbosity = 0, # 0 (silent), 1 (warning), 2 (info), 3 (debug)
-                       
-                       eta = 0.3, # learning rate, default = 0.3
-                       gamma = 0.3, # Minimum loss reduction, default = 0
-                       max.depth = 6, # default = 6
-                       #sampling_method = "gradient_based", # default = uniform
-                       #lampda = 1,
-                       #alpha = 0,
-                       #three_method = "gpu_hist",
-                       
-                       #nthread = 2, 
-                       nrounds = 20,
+                       verbosity = 0,            # 0 (silent), 1 (warning), 2 (info), 3 (debug)
+                       nrounds = p$nrounds,
+                       params = p,
+                       tree_method = "gpu_hist",
                        objective = "binary:logistic"
-                       #objective = "reg:squaredlogerror" # 
-                       # save_name = paste("out/", sp, "/" ,sp, ".model", sep = "") # path to save model
                        )
-  
-  #xgb_model[["evaluation_log"]]
-  
-  importance <- xgb.importance(model = xgb_model)
-  #xgb.plot.importance(importance_matrix = importance)
-  
-  #xgb.ggplot.deepness(xgb_model)
-  
-  xgb.ggplot.shap.summary(data = as.matrix(data %>% select(-species_occurrence, -geometry)), model = xgb_model )
-  ggsave(paste(sp, "_shap.png", sep=""), path=paste("out/",sp, sep=""))
-
+  if(params$output_plots) {
+    #xgb_model[["evaluation_log"]]
+    
+    importance <- xgb.importance(model = xgb_model)
+    #xgb.plot.importance(importance_matrix = importance)
+    
+    #xgb.ggplot.deepness(xgb_model)
+    
+    #xgb.plot.multi.trees(mode = xgb_model, features_keep = 3)
+    
+    #library("DiagrammeRsvg", "rsvg")
+    
+    
+    #gr <- xgb.plot.multi.trees(model=xgb_model, features_keep = 5, render=FALSE)
+    #DiagrammeR::export_graph(gr, 'tree.pdf', width=600, height=1500)
+    
+    xgb.ggplot.shap.summary(data = as.matrix(data %>% select(-species_occurrence, -geometry)), model = xgb_model )
+    ggsave(paste(sp, "_shap.png", sep=""), path=paste("out/",sp, sep=""))
+    rm(importance)
+  }
+    
   # folder needs to exist befor, ggsave() automaically creates those, if the not exist
   xgb.save(xgb_model, paste("out/", sp, "/" ,sp, ".model", sep = ""))
   
   # Cleanup before next iteration
-  rm(sp); rm(data); rm(training_data); rm(xgb_model); rm(importance)
+  rm(data); rm(training_data); rm(xgb_model); 
 }
+rm(sp); rm(p)
 
 ```
 
@@ -518,39 +568,46 @@ elev_pak = resample(elevation_pak, bioclim_pak)
 ext(elevation_pak) <- ext(bioclim_pak)
 prediction_stack = c(bioclim_pak, elev_pak)
 
+# Remove values outside pakistan, because otherwise the model will make predictions outside the modeling area
+prediction_stack = terra::mask(prediction_stack, border_pak)
+
+# We need to make a custom predict function for terra::predict() since xgboost didn't take a data.frame as input. See https://stackoverflow.com/questions/71947124/predict-xgboost-model-onto-raster-stack-yields-error
+prediction_function <- function(model, data, ...) {
+  predict(model, newdata=as.matrix(data), ...)
+}
+
 for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species)
 {
+  message(paste("Predicting model for species", sp))
   sp_model = xgb.load(paste("out/", sp, "/" ,sp, ".model", sep = ""))
   
-  # We need to make a custom predict function for terra::predict() since xgboost didn't take a data.frame as input. See https://stackoverflow.com/questions/71947124/predict-xgboost-model-onto-raster-stack-yields-error
-  prediction_function <- function(model, data, ...) {
-    predict(model, newdata=as.matrix(data), ...)
-  }
+  print(sp_model)
   
   prediction_raster = terra::predict(object=prediction_stack,
                        model=sp_model,
                        fun=prediction_function
   )
-  
-  # prediciton_raster = terra::clamp(prediction_raster, lower=10, values=FALSE)
-  
+
   terra::writeRaster(prediction_raster, paste("out/", sp, "/" ,sp, ".tif", sep = ""), overwrite=TRUE)
-  #terra::writeRaster(prediciton_raster$lyr1, "test.tif", overwrite=TRUE, datatype="FLT8S" )
   
-  plot(prediction_raster)
+  if(params$output_plots) {
+    ggplot() + 
+      geom_spatraster(data = prediction_raster, ) +
+      scale_fill_hypso_c(direction = -1, limits=c(0,1), name = "Prediction") +
+      geom_sf(data = modeling_data %>% filter(species == sp),
+              mapping = aes(color = "Observed"),
+              size = 1,
+              shape = 1 ) +
+      geom_sf(data = sf::st_as_sf(border_pak),
+              fill = NA, show.legend=FALSE) +
+      ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
+    
+    ggsave(paste(sp, "_prediction.png", sep=""), path=paste("out/",sp, sep=""))
+  }
   
-  ggplot() + geom_spatraster(data=prediction_raster, name="Prediction") +
-    #scale_fill_binned() +
-    #scale_alpha() + 
-    #scale_fill_gradient(low="green", high="red") + 
-    geom_sf(data = modeling_data %>% filter(species == sp), mapping = aes(color = 'Observed'), size = 1, shape=1 ) +
-    geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) +
-    ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
-  
-  ggsave(paste(sp, "_prediction.png", sep=""), path=paste("out/",sp, sep=""))
-  
-  # TODO: clean up in for loop and at end of chunk
+  rm(sp); rm(sp_model); rm(prediction_raster)
 }
+rm(prediction_function)
 ```
 
 Interessting species predictions:
@@ -571,17 +628,27 @@ sp = "Aglais_caschmirensis"
 prediction = rast(paste("./out/",sp,"/",sp,".tif", sep = "" ))
 prediction = terra::mask(prediction, border_pak)
 
-ggplot() + geom_spatraster(data = prediction, name = "Prediction") +
-  scale_fill_gradient(low = "black", high = "white") + 
+ggplot() + 
+  geom_spatraster(data = prediction) +
+  scale_fill_hypso_c(direction = -1,
+                     limits=c(0,1),
+                     name = "Prediction") +
   geom_sf(data = modeling_data %>% filter(species == sp),
-          mapping = aes(color = 'Observed'),
           size = 1,
           shape = 1 ) +
   geom_sf(data = sf::st_as_sf(border_pak),
           fill = NA, show.legend=FALSE) +
   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
 
-rm(sp); rm(prediction)
+
+  sp_model = xgb.load(paste("out/", sp, "/" ,sp, ".model", sep = ""))
+
+  importance <- xgb.importance(model = sp_model, feature_names = names(data.frame(modeling_data) %>% select(-species, -geometry))  )
+  xgb.plot.importance(importance_matrix = importance)
+
+
+
+rm(sp); rm(prediction); rm(sp_model); rm(importance)
 ```
 
 
@@ -591,26 +658,42 @@ rm(sp); rm(prediction)
 sp = "Colias_erate"
 #sp = "Colotis_calais"
 #sp = "Colias_stoliczkana"
+sp = "Zizeeria_karsandra"
 
 prediction = rast(paste("./out/",sp,"/",sp,".tif", sep = "" ))
 prediction = terra::mask(prediction, border_pak)
 
-ggplot() + geom_spatraster(data=prediction, name="Prediction") +
-  #scale_fill_binned() +
-  #scale_alpha() + 
-  scale_fill_gradient(low="black", high="white") + 
-  geom_sf(data = modeling_data %>% filter(species == sp), mapping = aes(color = 'Observed'), size = 1, shape=1 ) +
-  geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) +
+ggplot() + 
+  geom_spatraster(data = prediction) +
+  scale_fill_hypso_c(direction = -1,
+                     limits=c(0,1),
+                     name = "Prediction") +
+  geom_sf(data = modeling_data %>% filter(species == sp),
+          size = 1,
+          shape = 1 ) +
+  geom_sf(data = sf::st_as_sf(border_pak),
+          fill = NA, show.legend=FALSE) +
   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
+
+
+  sp_model = xgb.load(paste("out/", sp, "/" ,sp, ".model", sep = ""))
+
+  importance <- xgb.importance(model = sp_model, feature_names = names(data.frame(modeling_data) %>% select(-species, -geometry))  )
+  xgb.plot.importance(importance_matrix = importance)
+
+
+
+rm(sp); rm(prediction); rm(sp_model); rm(importance)
 ```
 
 For how many species is no prediction made?
--> count(max(raster) = 0)
+-> pseudocode: count(max(raster) = 0)
 
 
 
 ## ) Species Richness Map
 
+Finally we combine all predicted species occurrence into a Map that indicates how many species might occur in one pixel. First, we define a threshold above which the prediction should be considered. The prediction have been saved as tif in 'out/<species_name>' and we need to load them before modifying. After that, we can reclassify the raster with 0 and 1, calculated from the threshold. To get the number of species in one pixel we need to sum up all rasters into one final raster. 
 
 https://babichmorrowc.github.io/post/2019-04-12-sdm-threshold/
 
@@ -620,42 +703,43 @@ https://babichmorrowc.github.io/post/2019-04-12-sdm-threshold/
 # l_species will consist of all 421 species prediction rasters -> RAM usage will be insane ~ 30GB
 l_species = list()
 
+threshold = 0.75
+
+# reclassify raster:
+# value < threshold = 0
+# value > threshold = 1
+m <- c(0, threshold, 0,
+       threshold, 1, 1)
+m <- matrix(m, ncol=3, byrow=TRUE)
+
 for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species)
 {
   # get species raster from file system
-  file = paste("./out/",sp,"/",sp,".tif", sep = "" )
-  r = rast(file)
-  
-  # reclassify raster:
-  # value < threshold = 0
-  # value > threshold = 1
-  threshold = 0.75
-  m <- c(0, threshold, 0,
-         threshold, 1, 1)
-  m <- matrix(m, ncol=3, byrow=TRUE)
-  
-  r = terra::classify(r, m, include.lowest = TRUE)
+  r = rast(paste("./out/",sp,"/",sp,".tif", sep = "" ))
 
-  l_species[sp] = r
-  #plot(r)
-  
+  l_species[sp] = terra::classify(r, m, include.lowest = TRUE)
+
+  rm(r)
 }
 
-stack = terra::rast(l_species)
-stack = sum(stack)
-stack = terra::mask(stack, border_pak)
+rm(m)
 
-# TODO: mask stack to pakistan
+stack = terra::rast(l_species)
+species_richness = sum(stack); rm(stack)
+# Should be zero outside pakistan, since there is no prediction data?
+#species_richness = terra::mask(species_richness, border_pak)
+
+terra::writeRaster(species_richness, "out/species_richness.tif", overwrite=TRUE)
 
 ggplot() + 
-  geom_spatraster(data = stack) +
-  scale_fill_hypso_c(palette="spain", name="N° of species" ) +
-  #scale_fill_hypso_b(name="N° of species") +
+  geom_spatraster(data = species_richness) +
+  scale_fill_hypso_c(direction=-1, name="N° of species" ) +
   geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) +
   ggtitle("Species richness of butterflies in Pakistan")
 
 ggsave("SpeciesRichnessMap.png", path="out") 
 
+rm(l_species); rm(threshold)
 ```
 
 # ) Conclusion
@@ -665,7 +749,7 @@ How was Computing Speed compared to other methods?
 # ) Sources
 
 # ) Troubleshooting & sessionInfo
-```{r}
+```{r sessioninfo}
 sessionInfo()
 ```
 
