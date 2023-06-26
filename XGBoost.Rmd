@@ -504,10 +504,10 @@ data <- xgb.DMatrix(
 if(params$gpu_acc) {
   xgb_params = c(xgb_params, predictor="gpu_predictor")
   xgb_params = c(xgb_params, tree_method="gpu_hist")
+  xgb_params = c(xgb_params, sampling_method = "gradient_based")
 }
 #xgb_params = c(xgb_params, eval_metric="error") # Binary classification error rate. It is calculated as #(wrong cases)/#(all cases). For the predictions, the evaluation will regard the instances with prediction value larger than 0.5 as positive instances, and the others as negative instances.
 xgb_params = c(xgb_params, objective = "binary:logistic") # logistic regression for binary classification, output probability
-xgb_params = c(xgb_params, sampling_method = "gradient_based")
 
 model <- xgboost(data = data,
                  verbose = 0,            # 0 (silent), 1 (warning), 2 (info), 3 (debug)
