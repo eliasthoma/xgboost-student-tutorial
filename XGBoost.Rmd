@@ -201,6 +201,12 @@ In this assessment were trying to classify geo-points if they're potential habit
 <div class="text">To calculate the gain-value we need the similarity-score of each leaf and the root.</div>
 </div>
 
+<div class="mySlides">
+<img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhelYfzAkKKurpxMj1xCuwF0aLNWrJ2JSSqs5OFXNyxFNKfr8GXcNgDLHqAg8KnNfI3hDsviapqnKO5elMpnHAZLYGZNL-wEzMEL7LdT55k3F9aHajhAtxQc1JkcQNdeYh4601gcsCDbU1wmaokkadKOBPd347OEJHQFjNQcQ_qQV_cM2kXOZ3l3Z0VrCg/s1600/image6.jpeg" style="width:100%">
+<div class="text">By summing the similarity-scores of the left and the right leaf and then substracting the similarity-score of the root we get the gain-value. In this case it's 3.8 and the highest possible for this dataset therefore this would be the final tree. But why doesn't XGBoost split the residuals any further? This has to do with regularization parameters and pruning wich we're going to explain in the next chapter.</div>
+</div>
+
+
   <!-- Next and previous buttons -->
   <a class="prev" onclick="plusSlides(-1)">&#10094;</a>
   <a class="next" onclick="plusSlides(1)">&#10095;</a>
@@ -213,6 +219,7 @@ In this assessment were trying to classify geo-points if they're potential habit
   <span class="dot" onclick="currentSlide(3)"></span>
   <span class="dot" onclick="currentSlide(4)"></span>
   <span class="dot" onclick="currentSlide(5)"></span>
+  <span class="dot" onclick="currentSlide(6)"></span>
 </div>
 
 <script>
@@ -247,6 +254,49 @@ function showSlides(n) {
   dots[slideIndex-1].className += " active";
 }
 </script>
+
+# ) Regularization & pruning
+
+How XGBoost builds trees is limited by  multiple regularization parameters:
+
+## ) Lambda
+
+We've heard of Lambda when we're calculated the similarity-score. XGBoost default value for Lambda is 0 therefore we've been ignoring it. But when Lambda is set to >0 the similarity-score get's smaller because the denominator becomes larger. Thus Lambda prevents over-fitting.
+```{r}
+#![Cover/min_child_weigth](https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhmPwBMb_KTLxryPlbQUksG13KoiKE97D-lH2vseNhSeeHv4M8Vrz8#yTG8lMvyF6EIWt5LFwxCUN9Fb1JqZwjJi0H_kiX5agdqr2_KSqKkuEN3C6ed0wAqqjp7-2nl310WWnxgfCObLfHxPWjNNyT01BIcK_GQcFjWlD4xA3CRZ2kL_iCRaQMU_KXC7zx8/s#1600/lambda.jpg)
+```
+
+```{r, echo=FALSE, out.width = '30%'}
+
+knitr::include_graphics("https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhmPwBMb_KTLxryPlbQUksG13KoiKE97D-lH2vseNhSeeHv4M8Vrz8yTG8lMvyF6EIWt5LFwxCUN9Fb1JqZwjJi0H_kiX5agdqr2_KSqKkuEN3C6ed0wAqqjp7-2nl310WWnxgfCObLfHxPWjNNyT01BIcK_GQcFjWlD4xA3CRZ2kL_iCRaQMU_KXC7zx8/s1600/lambda.jpg")
+```
+
+## ) Cover/min_child_weigth
+
+Another regularization parameter is the Cover or min_child_weight. This parameter is also the reason why we haven't continued building our example tree. In XGBoost the default value for the cover is 1 wich means that every leaf with a cover value less than 1 doesn't get build.
+The cover for classification tree's is calculated by summing the previous probability times 1 minus the previous probability, for each residual in the leaf.
+
+```{r, echo=FALSE, out.width = '100%'}
+
+knitr::include_graphics("https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgm8a-UAaRkFn0z90jWb4YuwIX6ExK1dE2yC_vOMmYls_BxTAdHKoHYfazNgYZwxzLCLhc3XMbyzOE63O3Azt8iEIcvBSxiLQfz40AkeL_OSDSeqY9BKrYAIg9IHG9hmANyurL1UxwmMSCMXNA5MS1fuG_Fzdf5_ynlX4bM4T8zdADbqh-nqZ1Vyk9QwpY/s1600/image7.jpg")
+```
+
+# ) Pruning
+
+Similar to Cover (min_child_weigth) Gamma is a regularization parameter that causes XGBoost to only build new leafs when the Gain-Value is larger than Gamma. 
+
+```{r, echo=FALSE, out.width = '30%'}
+
+knitr::include_graphics("https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiaz4IyygAkr4KxI2BiVDzw2GjUT25tokUIU1BkwoSLWOz6A7Km_CnAImcm7cY_7gBPi3juIUEkYCNW2MI5NVnSPjqMxYp0C-mG1MlH-eI-BWwZXEK7sNhW9Ki87HYu0DZHIGTGafT6J7f7msh9uh7BjTMyX4rT9nKDsIzjpX5kv-Pusaz7nhkJAClafnE/s1600/gamma.jpg")
+```
+
+Therefore it prevents overfitting the trees to our data. Gamma is a highly specialized regularization parameter, what mean's that there is no "good" value. By default it's 0 therefore no regularization takes place. 
+
+XGBoost substract's gamma from the Gain-Value and then removes the leaf if the result is a negative number.
+For example if we take the previous calculated Gain-Value of our example tree of 3.8 a gamma-value of 4 would prune the whole tree down to the root. But if the gamma-value is just 0 XGBoost can build extremly large trees thus overfitting the trees to the dataset and raising the computation time a lot.
+
+
+
 
 # ) Species Distribution Modeling
 
