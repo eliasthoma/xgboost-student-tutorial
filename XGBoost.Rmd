@@ -9,7 +9,6 @@ output:
     toc_float: TRUE
 params:
     subset_samples: TRUE
-    output_plots: FALSE
     gpu_acc: FALSE
 ---
 
@@ -710,7 +709,7 @@ for(sp in species)
   i <- i+1
   message(paste("[", i, "/", length(species), "] ", sp, ": ", sep = ""), appendLF=F)
   
-  # training and prediction the species model
+  # training and prediction of the species model
   model <- train(modeling_data, sp, as.list(xgboost_params[5,]))
   prediction <- predict(model, prediction_rstack)
   
@@ -761,8 +760,6 @@ for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$spec
 stack = terra::rast(l_species)
 stack = sum(stack)
 stack = terra::mask(stack, border_pak)
-
-# TODO: mask stack to pakistan
 
 ggplot() + 
   geom_spatraster(data = stack) +
