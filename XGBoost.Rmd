@@ -10,6 +10,7 @@ output:
 params:
     dev: TRUE # shortens knit time, by only modeling one species
     output_plots: FALSE
+    gpu_acc: FALSE
 ---
 
 <style type="text/css">
@@ -252,6 +253,10 @@ function showSlides(n) {
 
 # ) Application of XGBoost in R
 
+XGBoost is available for different programming and scripting languages, include Python, R, Java and C++. The implementation of the Gradient Boosting framework is fast and accurate. 
+
+
+Source: https://xgboost.readthedocs.io/en/stable/
 ## ) Prerequisites
 
 Before you dive into the code you need to install some packages this script will use: 
@@ -268,11 +273,12 @@ The XGBoost package can by installed in two different ways. First there is the d
 ```{r Setup from CRAN}
 if(!require(xgboost)){install.packages("xgboost")}
 ```
-But if you are dealing with large data sets you may want to use GPU acceleration. Therefor you have to use a prebuild package from GITHUB (https://github.com/dmlc/xgboost/releases). Download it, place it in the same folder as this script and run the commands below.
+But if you are dealing with large data sets you may want to use GPU acceleration. Therefor you have to use a prebuild package from GITHUB (https://github.com/dmlc/xgboost/releases). Download it, place it in the same folder as this script and run the commands below. For Benchmarks of a High-End CPU vs Low-End GPU, see https://medium.com/data-design/xgboost-gpu-performance-on-low-end-gpu-vs-high-end-cpu-a7bc5fcd425b. Risks? Reproducability?
 ```{r Setup for GPU acceleration, eval=F}
-## !! Installation on windows fails with "Warnung in system("sh ./configure.win") 'sh' not found"
-## Workaround: Copy src/xgboost.dll from archive into your r library manually e.g C:\Users\%USERNAME%\AppData\Local\R\win-library\4.2\xgboost\libs\x64
- 
+##
+## !! Installation on windows failed with "Warning in system("sh ./configure.win") 'sh' not found", for dirty Solution see section Troubleshooting
+##
+
 detach("package:xgboost")
 
 # Install dependencies
@@ -280,10 +286,9 @@ install.packages(c("data.table", "jsonlite"))
 # Install XGBoost
 system(paste("R CMD INSTALL ", getwd(),  "/xgboost_r_gpu_win64_21d95f3d8f23873a76f8afaad0fee5fa3e00eafe.tar.gz", sep=""))
 
-install.packages(paste(getwd(),"/xgboost_r_gpu_win64_21d95f3d8f23873a76f8afaad0fee5fa3e00eafe.tar.gz", sep=""), repos=NULL)
-
 require(xgboost)
 
+params$gpu_acc = TRUE
 ```
 
 After installing all needed libaries you need to load them: 
@@ -307,8 +312,7 @@ require(xgboost)    # our modeling libary
 
 ## ) Preparing data
 
-Good Model needs a good data preparation,
-Common way of using presence and absence points
+
 
 
 Let's start with preparing the data used to train the model. The steps of the following script can be summarized in:
@@ -321,7 +325,7 @@ Let's start with preparing the data used to train the model. The steps of the fo
 6. Extract bioclim and elevation values for the modeling_data 
 7. Define a single output variable and clean up environment
 
-```{r Preparing data, attr.source=".numberLines"}
+```{r loading data, attr.source=".numberLines"}
 ##################################################
 ##########    Step 1 - Loading data     ##########
 ##################################################
@@ -342,7 +346,13 @@ bioclim_pak = terra::mask(bioclim_pak, border_pak)
 # elevation data form pakistan
 elevation_pak = geodata::elevation_30s(country="PAK", path="data/")
 
+```
 
+ 
+`str(species_occurrences_all`
+
+
+```{r preparing data, attr.source=".numberLines"}
 ##################################################
 ##########  Step 2 - Data aggregation   ##########
 ##################################################
@@ -393,7 +403,7 @@ if(params$dev) {
 Being aware of your data is essentially in data science. You should constantly check the form of your data and adjust it if it does not fit the requirements. While developing code it's recommend to have some code snippets to check that. The following chunks represent a sample of code snippets being used to develop this tutorial. 
 
 **Are there presence and absence points inside the modeling_data ?** 
-Check if the species column has species names (=presence) and NA (=absence) values. The data was combined by rbind, so the species_presence data should be at the top and species_absence data at the bottom of the dataframe. Let's check this by using the `r knitr::inline_expr("head()")` and `r knitr::inline_expr("tail()")` functions, which print us the first/last 6 rows.
+Check if the species column has species names (=presence) and NA (=absence) values. The data was combined by rbind, so the species_presence data should be at the top and species_absence data at the bottom of the dataframe. Let's check this by using the `knitr::inline_expr("head()")` and `knitr::inline_expr("tail()")` functions, which print us the first/last 6 rows.
 
 ```{r Data overview 1}
 head(modeling_data); tail(modeling_data)
@@ -454,46 +464,16 @@ rm(species_nsamples)
 
 ## ) Training the model
 
-```{r xgboost parameters}
-
-xgboost_params <- data.frame("dataset" = character(),
-                             "nrounds" = numeric(),
-                             "eta" = numeric(), 
-                             "max_depth" = numeric(), 
-                             "subsample" = numeric(), 
-                             "gamma" = numeric(),
-                             "alpha" = numeric(),
-                             "lambda" = numeric(),
-                             "colsample_bytree" = numeric(), 
-                             "min_child_weight" = numeric()
-                             )
-
-xgboost_params <- xgboost_params %>% add_row(dataset = "default", eta = 0.3, max_depth = 6, gamma = 0, alpha = 0, lambda = 1, subsample = 1, colsample_bytree = 1, min_child_weight = 1)
+Starting with the training of our xgboost model we decided to do training sperate for every model. Despite that xgboost is capable of Multi-Classificiation. Therefor we defined a function 'train' wich invokes out data filtering and xgboost specific data preperation to meet the requirements of xgboost. Espacially converting the modeling data into a 'xgb.DMatrix' object. Finally we define some general parameters we want to use, e.g. enable of gpu acceleration by knit paramters. Last but not least we save the model to the disk to preserve it for modeling.
 
 
-# Parameter taken from https://esajournals.onlinelibrary.wiley.com/doi/full/10.1002/ecm.1486
-xgboost_params <- xgboost_params %>% add_row(dataset = "literature", nrounds = 1000, eta = 0.001, max_depth = 5, subsample = 0.75, gamma = 0, alpha = 0, lambda = 1, colsample_bytree = 0.8, min_child_weight = 1)
-
-
-xgboost_params <- xgboost_params %>% add_row(dataset = "tuned", nrounds = 2000, eta = 0.01, max_depth = 5, subsample = 1, gamma = 0, alpha = 0, lambda = 1, colsample_bytree = 1, min_child_weight = 1)
-
-
-
-print(xgboost_params)
-```
-
-
-```{r Traning the model}
-
-# Instead of training one model for each species manually, there is also the option to do a multi-output model.
-# See https://xgboost.readthedocs.io/en/latest/tutorials/multioutput.html for additional info
-
-for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species)
-{
-  message(paste("Training model for species", sp))
-  
+```{r training function}
+train <- function(data, # training data, required
+                  sp, # species name, required
+                  xgb_params = list("nrounds" = 1000) # xgboost params, see https://xgboost.readthedocs.io/en/latest/parameter.html
+) {
   # filter modeling data to current species, don't forget the absence points!
-  data = modeling_data %>% filter(species == sp | is.na(species))
+  data <- modeling_data %>% filter(species == sp | is.na(species))
   data <- dummy_columns(data, select_columns = "species",
                         ignore_na = TRUE, 
                         remove_selected_columns = TRUE)
@@ -506,25 +486,144 @@ for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$spec
             mutate(species_occurrence = factor(species_occurrence))
   
   
-  training_data <- xgb.DMatrix(data = as.matrix(data %>% select(-species_occurrence, -geometry)), 
+  data <- xgb.DMatrix(data = as.matrix(data %>% select(-species_occurrence, -geometry)), 
                                label = as.matrix(data %>% select(species_occurrence))  
                                )
+  # enable gpu acceleration only if wanted
+  if(params$gpu_acc) {
+    xgb_params = c(xgb_params, predictor="gpu_predictor")
+    xgb_params = c(xgb_params, tree_method="gpu_hist")
+  }
+  #xgb_params = c(xgb_params, eval_metric="error") # Binary classification error rate. It is calculated as #(wrong cases)/#(all cases). For the predictions, the evaluation will regard the instances with prediction value larger than 0.5 as positive instances, and the others as negative instances.
+  xgb_params = c(xgb_params, objective = "binary:logistic") # logistic regression for binary classification, output probability
   
-   p <- as.list(xgboost_params[3,])
-   
-  # check the parameters here https://xgboost.readthedocs.io/en/latest/parameter.html
-  # TODO: include all parameters, comment not used out
-  xgb_model <- xgb.train(data = training_data,
+  model <- xgb.train(data = data,
                        verbosity = 0,            # 0 (silent), 1 (warning), 2 (info), 3 (debug)
-                       nrounds = p$nrounds,
-                       params = p,
-                       tree_method = "gpu_hist",
-                       objective = "binary:logistic"
+                       nrounds = xgb_params$nrounds,
+                       params = xgb_params
                        )
-  if(params$output_plots) {
+  
+  xgb.save(model, paste("out/", sp, ".model", sep = ""))  # Max compatibility with future xgboost versions
+  save(model, file = paste("out/", sp, ".rds", sep = "")) # Fully restorable r object
+  
+  return(model)
+}
+```
+
+Additional training paramters are defined here in a own data frame. Advantage of this are the comparability and useability of the different parameter sets. The Table show the default parameter, one set taken from Roozbeh Valavi et. al. And last the parameters we will user for training. Those have been tested and tuned manually.
+
+```{r training parameter}
+
+xgboost_params <- data.frame("dataset" = character(), 
+                             "nrounds" = numeric(), 
+                             "eta" = numeric(), 
+                             "max_depth" = numeric(), 
+                             "subsample" = numeric(), 
+                             "gamma" = numeric(),
+                             "alpha" = numeric(),
+                             "lambda" = numeric(),
+                             "colsample_bytree" = numeric(), 
+                             "min_child_weight" = numeric()
+                             )
+
+xgboost_params <- xgboost_params %>% add_row(dataset = "default", eta = 0.3, max_depth = 6, gamma = 0, alpha = 0, lambda = 1, subsample = 1, colsample_bytree = 1, min_child_weight = 1)
+
+# Parameter taken from https://esajournals.onlinelibrary.wiley.com/doi/full/10.1002/ecm.1486
+xgboost_params <- xgboost_params %>% add_row(dataset = "literature", nrounds = 1000, eta = 0.001, max_depth = 5, subsample = 0.75, gamma = 0, alpha = 0, lambda = 1, colsample_bytree = 0.8, min_child_weight = 1)
+
+xgboost_params <- xgboost_params %>% add_row(dataset = "tuned", nrounds = 2000, eta = 0.01, max_depth = 5, subsample = 1, gamma = 0, alpha = 0, lambda = 1, colsample_bytree = 1, min_child_weight = 1)
+
+print(xgboost_params)
+```
+
+TODO: make sample with aglais cashmirensis here
+
+## ) Prediction
+
+Next is to perpare data used to predic species occurrence in pakistan. Therefore we will use the raw raster data and predict of those with 'terra::predict' which allows us to pass on a 'Spatraster' object. XGBoost can't handle Spatraster, so 'terra:predict' allows as to define a custom prediction function, which converts data into a matrix.
+
+```{r prediction data}
+# gen stack from rasters bioclim_pak and elevation_pak
+elev_pak = resample(elevation_pak, bioclim_pak)
+ext(elevation_pak) <- ext(bioclim_pak)
+prediction_rstack = c(bioclim_pak, elev_pak)
+
+# Remove values outside pakistan, because otherwise the model will make predictions outside the modeling area
+prediction_rstack = terra::mask(prediction_rstack, border_pak)
+```
+
+
+```{r prediction function}
+# We need to make a custom predict function for terra::predict() since xgboost didn't take a data.frame as input. See https://stackoverflow.com/questions/71947124/predict-xgboost-model-onto-raster-stack-yields-error
+prediction_custom <- function(model, data, ...) {
+  stats::predict(model, newdata=as.matrix(data), ...)
+}
+
+predict <- function(model, prediction_data, plots=FALSE)
+{
+
+  #model = xgb.load(paste("out/", sp, "/" ,sp, ".model", sep = ""))
+  #model = readRDS(paste("out/", sp, "/" ,sp, ".bin", sep = ""))
+  prediction = terra::predict(object=prediction_data,
+                       model=model,
+                       fun=prediction_custom
+  )
+  
+  terra::writeRaster(prediction, paste("out/", sp, ".tif", sep = ""), overwrite=TRUE)
+  return(prediction)
+}
+```
+
+TODO: make sample with aglais cashmirensis here
+
+
+
+
+```{r, message=TRUE, warning=FALSE, error=FALSE}
+
+time_start <- proc.time()
+i <- 0
+
+species = (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species
+
+# xgboost needs the output dir to exist before saving model
+system("mk out")
+
+for(sp in species)
+{
+  time_start_species <- proc.time()
+  i <- i+1
+  message(paste("[", i, "/", length(species), "] ", sp, ": ", sep = ""), appendLF=F)
+  
+  # training and prediction the species model
+  model <- train(modeling_data, sp, as.list(xgboost_params[3,]))
+  prediction <- predict(model, prediction_rstack)
+  
+  
+  ggplot() + 
+    geom_spatraster(data = prediction) +
+    scale_fill_hypso_c(direction = -1,
+                       limits=c(0,1),
+                       name = "Prediction") +
+    geom_sf(data = modeling_data %>% filter(species == sp),
+            size = 1,
+            shape = 1 ) +
+    geom_sf(data = sf::st_as_sf(border_pak),
+            fill = NA, show.legend=FALSE) +
+    ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
+  ggsave(paste(sp, ".png", sep=""), path="out")
+
+  message(paste("Exceution took", proc.time() - time_start_species, "seconds"))
+}
+
+message(paste("Total Exceution took", proc.time() - time_start, "seconds"))
+```
+
+```{r, eval=F}
+  if(plot) {
     #xgb_model[["evaluation_log"]]
     
-    importance <- xgb.importance(model = xgb_model)
+    importance <- xgb.importance(model = model)
     #xgb.plot.importance(importance_matrix = importance)
     
     #xgb.ggplot.deepness(xgb_model)
@@ -537,78 +636,19 @@ for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$spec
     #gr <- xgb.plot.multi.trees(model=xgb_model, features_keep = 5, render=FALSE)
     #DiagrammeR::export_graph(gr, 'tree.pdf', width=600, height=1500)
     
-    xgb.ggplot.shap.summary(data = as.matrix(data %>% select(-species_occurrence, -geometry)), model = xgb_model )
+    xgb.ggplot.shap.summary(data = as.matrix(modeling_data %>% select(-species_occurrence, -geometry)), model = model )
     ggsave(paste(sp, "_shap.png", sep=""), path=paste("out/",sp, sep=""))
     rm(importance)
   }
-    
-  # folder needs to exist befor, ggsave() automaically creates those, if the not exist
-  xgb.save(xgb_model, paste("out/", sp, "/" ,sp, ".model", sep = ""))
-  
-  # Cleanup before next iteration
-  rm(data); rm(training_data); rm(xgb_model); 
-}
-rm(sp); rm(p)
-
 ```
 
-## ) Prediction
 
-Steps:
-1. Generate Point Grid for pakistan, point_distance = xx meters
-2. Extract environmental data for point grid
-3. Predict occurrence based on the build models
-3. Rasterrize points
+# Overview of Model and Prediction
 
-```{r Prediction}
-prediction_stack = list()
+https://towardsdatascience.com/using-shap-values-to-explain-how-your-machine-learning-model-works-732b3f40e137
 
-# gen stack from rasters bioclim_pak and elevation_pak
-elev_pak = resample(elevation_pak, bioclim_pak)
-ext(elevation_pak) <- ext(bioclim_pak)
-prediction_stack = c(bioclim_pak, elev_pak)
+Time comparison without and with GPU acceleration
 
-# Remove values outside pakistan, because otherwise the model will make predictions outside the modeling area
-prediction_stack = terra::mask(prediction_stack, border_pak)
-
-# We need to make a custom predict function for terra::predict() since xgboost didn't take a data.frame as input. See https://stackoverflow.com/questions/71947124/predict-xgboost-model-onto-raster-stack-yields-error
-prediction_function <- function(model, data, ...) {
-  predict(model, newdata=as.matrix(data), ...)
-}
-
-for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species)
-{
-  message(paste("Predicting model for species", sp))
-  sp_model = xgb.load(paste("out/", sp, "/" ,sp, ".model", sep = ""))
-  
-  print(sp_model)
-  
-  prediction_raster = terra::predict(object=prediction_stack,
-                       model=sp_model,
-                       fun=prediction_function
-  )
-
-  terra::writeRaster(prediction_raster, paste("out/", sp, "/" ,sp, ".tif", sep = ""), overwrite=TRUE)
-  
-  if(params$output_plots) {
-    ggplot() + 
-      geom_spatraster(data = prediction_raster, ) +
-      scale_fill_hypso_c(direction = -1, limits=c(0,1), name = "Prediction") +
-      geom_sf(data = modeling_data %>% filter(species == sp),
-              mapping = aes(color = "Observed"),
-              size = 1,
-              shape = 1 ) +
-      geom_sf(data = sf::st_as_sf(border_pak),
-              fill = NA, show.legend=FALSE) +
-      ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
-    
-    ggsave(paste(sp, "_prediction.png", sep=""), path=paste("out/",sp, sep=""))
-  }
-  
-  rm(sp); rm(sp_model); rm(prediction_raster)
-}
-rm(prediction_function)
-```
 
 Interessting species predictions:
 - Tarucus_theophrastus
@@ -624,8 +664,15 @@ Species with small number of samples resuting in no prediction. Where ist the mi
 
 ```{r prediction result sp-1}
 sp = "Aglais_caschmirensis"
+#sp = "Argynnis_pandora"
+#sp = "Aulocera_swaha"
+#sp = "Colias_erate"
+#sp = "Colotis_calais"
+#sp = "Colias_stoliczkana"
+#sp = "Zizeeria_karsandra"
+#sp = "Graphium_cloanthus"
 
-prediction = rast(paste("./out/",sp,"/",sp,".tif", sep = "" ))
+prediction = rast(paste("./out/",sp,".tif", sep = ""))
 prediction = terra::mask(prediction, border_pak)
 
 ggplot() + 
@@ -641,49 +688,18 @@ ggplot() +
   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
 
 
-  sp_model = xgb.load(paste("out/", sp, "/" ,sp, ".model", sep = ""))
+  #sp_model = xgb.load(paste("out/", sp, ".model", sep = ""))
 
-  importance <- xgb.importance(model = sp_model, feature_names = names(data.frame(modeling_data) %>% select(-species, -geometry))  )
-  xgb.plot.importance(importance_matrix = importance)
+  #importance <- xgb.importance(model = sp_model, feature_names = names(data.frame(modeling_data) %>% select(-species, -geometry))  )
+  #xgb.plot.importance(importance_matrix = importance)
 
 
-
-rm(sp); rm(prediction); rm(sp_model); rm(importance)
+rm(sp); rm(prediction); #rm(sp_model); rm(importance)
 ```
 
 
 ```{r prediction result sp-2}
-#sp = "Argynnis_pandora"
-#sp = "Aulocera_swaha"
-sp = "Colias_erate"
-#sp = "Colotis_calais"
-#sp = "Colias_stoliczkana"
-sp = "Zizeeria_karsandra"
 
-prediction = rast(paste("./out/",sp,"/",sp,".tif", sep = "" ))
-prediction = terra::mask(prediction, border_pak)
-
-ggplot() + 
-  geom_spatraster(data = prediction) +
-  scale_fill_hypso_c(direction = -1,
-                     limits=c(0,1),
-                     name = "Prediction") +
-  geom_sf(data = modeling_data %>% filter(species == sp),
-          size = 1,
-          shape = 1 ) +
-  geom_sf(data = sf::st_as_sf(border_pak),
-          fill = NA, show.legend=FALSE) +
-  ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
-
-
-  sp_model = xgb.load(paste("out/", sp, "/" ,sp, ".model", sep = ""))
-
-  importance <- xgb.importance(model = sp_model, feature_names = names(data.frame(modeling_data) %>% select(-species, -geometry))  )
-  xgb.plot.importance(importance_matrix = importance)
-
-
-
-rm(sp); rm(prediction); rm(sp_model); rm(importance)
 ```
 
 For how many species is no prediction made?
@@ -693,17 +709,20 @@ For how many species is no prediction made?
 
 ## ) Species Richness Map
 
-Finally we combine all predicted species occurrence into a Map that indicates how many species might occur in one pixel. First, we define a threshold above which the prediction should be considered. The prediction have been saved as tif in 'out/<species_name>' and we need to load them before modifying. After that, we can reclassify the raster with 0 and 1, calculated from the threshold. To get the number of species in one pixel we need to sum up all rasters into one final raster. 
+TODO: do for loop here for all species
 
-https://babichmorrowc.github.io/post/2019-04-12-sdm-threshold/
+Finally we combine all predicted species occurrence into a Map that indicates how many species might occur in one pixel. First, we define a threshold above which the prediction should be considered. The prediction have been saved as tif in 'out/<species_name>.tif' and we need to load them before modifying. After that, we can reclassify the raster with 0 and 1, based on the threshold. To get the number of species in one pixel we need to sum up all rasters into one final raster and plot it using ggplot.
 
+```{r Notes Section, include=F, eval=F}
+# https://babichmorrowc.github.io/post/2019-04-12-sdm-threshold/
+```
 
 ```{r species richness map}
 # Step 1  generate Raster Stack
-# l_species will consist of all 421 species prediction rasters -> RAM usage will be insane ~ 30GB
+# l_species will consist of all 421 species prediction rasters -> RAM usage will be insane ~ 25GB
 l_species = list()
 
-threshold = 0.75
+threshold = 0.5
 
 # reclassify raster:
 # value < threshold = 0
@@ -715,12 +734,12 @@ m <- matrix(m, ncol=3, byrow=TRUE)
 for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species)
 {
   # get species raster from file system
-  r = rast(paste("./out/",sp,"/",sp,".tif", sep = "" ))
+  r <- rast(paste("./out/",sp,".tif", sep = "" ))
 
-  l_species[sp] = terra::classify(r, m, include.lowest = TRUE)
+  l_species[sp] <- terra::classify(r, m, include.lowest = TRUE)
 
   rm(r)
-}
+} 
 
 rm(m)
 
@@ -744,11 +763,18 @@ rm(l_species); rm(threshold)
 
 # ) Conclusion
 
-How was Computing Speed compared to other methods? 
-
 # ) Sources
 
-# ) Troubleshooting & sessionInfo
+# ) Troubleshooting
+
+**Installing XGBoost with GPU accerlation**
+
+Pre-built binary packages are offered by XGBoost after someone makes a request on GitHub (https://github.com/dmlc/xgboost/issues/6654). Since the packages are precompiled, it should not be necessary to compile them from source. The installation still fails with error `r `knitr::inline_expr("Warning in system("sh ./configure.win") 'sh' not found")`. So there are two ways to fix this problem:
+- Install R-Tools and build from source
+- Copy src/xgboost.dll from archive (https://github.com/dmlc/xgboost/releases) into your r library manually e.g C:\Users\%USERNAME%\AppData\Local\R\win-library\4.2\xgboost\libs\x64
+
+**Sessioninfo**
+
 ```{r sessioninfo}
 sessionInfo()
 ```
