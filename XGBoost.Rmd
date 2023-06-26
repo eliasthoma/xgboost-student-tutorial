@@ -159,16 +159,18 @@ You will be introduced to the basic concepts of XGBoost and you'll be provided w
 
 # ) But what's XGBoost?
 
-XGBoost is a ensemble Method same as Random Forrest, this means it combines the output of multiple Trees .But the methods differ in the  way the idividual TRees are build and how the results are combined.
-In Xgb the Output oft he Trees anrent combined equally. Instead xgb uses a method called boosting.
-Boosting combines Weak learner (WEAK LERNERS ERKLÄREN) sequentually so that the new tree corrects the errors oft he previous one.
-To understand this we have to look into some mathematical details. But dont worry when using XGBoost these details will be automated. Nevertheless its importand to understand these details to optimize the algorithm later on.
+XGBoost is a ensemble Method same as Random Forrest, this means it combines the output of multiple Trees. But the methods differ in the  way the idividual Trees are build and how the results are combined.
+In Xgboost the Output oft the Trees aren't combined equally. Instead XGBoost uses a method called boosting.
+Boosting combines weak learner (small trees) sequentually so that the new tree corrects the errors oft he previous one.
+To understand this we have to look into some mathematical details. But dont worry when using XGBoost these details will be automated. Nevertheless its importand to understand these processes to optimize the algorithm later on.
 
 
-## ) How does it exactly work?
+## ) So how does it exactly work?
 
-As said XGBoost builds on many concepts to deliver (SOLCHE KRASSEN ERGEBNISSE!?)
+As said XGBoost builds on many concepts to deliver it's often outstanding results.
 We're going to start with the mathematical base concepts of how XGBoost builds trees.
+
+In this assessment were trying to classify geo-points if they're potential habitats for a number of butterfly species. In order to do that we need XGBoost to build classification trees. XGBoost work's also with regression but the process differs a little, so were not going to focus on that.
 
 
 <!-- Slideshow container -->
@@ -176,21 +178,27 @@ We're going to start with the mathematical base concepts of how XGBoost builds t
 
 <div class="mySlides">
 <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhrAdT9U5a6js_clc19U2MySmViR5NAdMz5acOyTkolprWMt5-xYqLO8LgRgnCtHyt3UdKScfZtVNuoSkWNu8DfJe8aOeH4cxn1uWd7AarUOSMMOT5IPmMYegkyuxvN6qSBp26iFepdLY4FvCGs5XW9aO8rjT7tpsVNaotlPT0TcCWalyMXhddxZHwLxng/s1600/image1.jpeg" style="width:100%">  
-<div class="text">Green dots represent the presence points. Red dots represent absence points. The black line in the middle is XGBoost's initial prediction. By default, it is 0.5, which means there is a 50% chance to find a butterfly at any given point.</div>
+<div class="text">When building classification trees XGBoost evaluates each given point if a condition is met or not. In our case the green dots, with a value of one, represent the presence points. Red dots, with values of zero represent absence points. The black line in the middle is XGBoost's initial prediction. By default, it is 0.5, which means there is a 50% chance to find a butterfly at any given point.</div>
 </div>
 
 <div class="mySlides">
 <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgDNS7NaU14obTeIdPoNMZGf3zl6y5PtL6RFqW4R9DpyQnJ08VoXx656ubQ4YYmn7SkdDI8TSyfnZtZeLmZ0rdd1gdsOn1vnVsmow7wsfptuMCMm7cxQyxHs6JVcdqhE7pMaJ6e6mP7abHtEkrnOelaK0oIBGpnWhpoEnldhUgK3EFyBqT_8JAyAYIDHg4/s1600/image2.jpeg" style="width:100%">
-<div class="text">If the observed value is 1 (i.e., a presence point), the residuals are 0.5. The same applies to values of 0 (i.e., absence points) where the residuals are -0.5.</div>
+<div class="text">In the next step XGBoost calculates the residuals of all given points. The residuals are the difference between the observed prediction and the predictet. If the observed value is one (i.e., a presence point), the residuals are 0.5. The same applies to values of zero (i.e., absence points) where the residuals are -0.5.</div>
 </div>
 
 <div class="mySlides">
 <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgRsgLPZq5EfK0nt-jMyi2dRi3dg0CXvEGYVaKdTCZuKMYVymUEGzV3dTlGZ8biZnw2nZuU64y6bQnEz2MzByxq_oc_KMakRqAqpSuAY8yNvqLS-eGfpLXLRGsFzeDMpGH20jEoejFqcOoL56z3uWfHI-h2-tLvnEPZgCxdjn8VQfCJGsCH7lVY3W1qWWg/s1600/image3.jpeg" style="width:100%">
-<div class="text">XGBoost now splits the observations at thresholds that result in the highest gain value.</div>
+<div class="text">In order to find the threshhold of parameters that influence the probability of a point being a presence or absence point the data has to be split at the crucial values of that parameter.</div>
 </div>
+
 <div class="mySlides">
 <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjhM9-yn-gtedu2-iH4cr4yfeC4zVSV-vaXaPCNIL2ZTi1-UdAhdBtopQDIlPkeWj85zUpy5yVD9vMMn-M3wyTMUPcDplwORV6qGLA4SkLhPGsUlzy-YOOvyBUV40M330ReHUC-hVXpn5f0aZeCc2Fyeogfe51Ci8DIMI2qxM1LTqnsbVTWn2pFTIx0nqM/s1600/image4.jpeg" style="width:100%">
-<div class="text">XGBoost now splits the observations at thresholds that result in the highest gain value.</div>
+<div class="text">Therefore XGBoost splits the observations at thresholds that result in the highest gain value. But whats the gain-value?</div>
+</div>
+
+<div class="mySlides">
+<img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEg7R0oWdDQqkK6MXSD6zqchi27Fsun5UK2aal9TcArMU_jUCPJEh4VbxCa--ZxVHijWvU_y3vPmk87C9ToUjK856o3DpQCGDSG5fPkcs8GGRIfs3iUmtSgFzS2FVum_dFcvG5w9_OlfLd9DrCXI9Eh8MlSIQ4YIcF0_w6FwBHh9SCjIqq24xbrlV-w0Irg/s1600/image5.jpeg" style="width:100%">
+<div class="text">To calculate the gain-value we need the similarity-score of each leaf and the root.</div>
 </div>
 
   <!-- Next and previous buttons -->
@@ -204,6 +212,7 @@ We're going to start with the mathematical base concepts of how XGBoost builds t
   <span class="dot" onclick="currentSlide(2)"></span>
   <span class="dot" onclick="currentSlide(3)"></span>
   <span class="dot" onclick="currentSlide(4)"></span>
+  <span class="dot" onclick="currentSlide(5)"></span>
 </div>
 
 <script>
@@ -247,9 +256,7 @@ function showSlides(n) {
 # ) Extreme Gradient Boosting Algorithem
 
 
-```{r}
-# rmarkdown::render("./XGBoost.rmd", params = list(dev=FALSE)
-```
+
 
 # ) Application of XGBoost in R
 
@@ -262,16 +269,17 @@ Source: https://xgboost.readthedocs.io/en/stable/
 Before you dive into the code you need to install some packages this script will use: 
 
 ```{r Install packages, eval=FALSE}
-install.packages("sf")
-install.packages("terra")
+install.packages('terra')
 install.packages("ggplot2")
-install.packages("fastDummies")
+install.packages('fastDummies')
 install.packages("tidyterra")
+
+
 ```
 
 The XGBoost package can by installed in two different ways. First there is the default package from CRAN, which will do it in most situations.
-```{r Setup from CRAN}
-if(!require(xgboost)){install.packages("xgboost")}
+```{r Setup from CRAN, eval=F}
+#install.packages("xgboost")
 ```
 But if you are dealing with large data sets you may want to use GPU acceleration. Therefor you have to use a prebuild package from GITHUB (https://github.com/dmlc/xgboost/releases). Download it, place it in the same folder as this script and run the commands below. For Benchmarks of a High-End CPU vs Low-End GPU, see https://medium.com/data-design/xgboost-gpu-performance-on-low-end-gpu-vs-high-end-cpu-a7bc5fcd425b. Risks? Reproducability?
 ```{r Setup for GPU acceleration, eval=F}
@@ -282,7 +290,7 @@ But if you are dealing with large data sets you may want to use GPU acceleration
 detach("package:xgboost")
 
 # Install dependencies
-install.packages(c("data.table", "jsonlite"))
+system('R -q -e "install.packages(c(\'data.table\', \'jsonlite\'))"') # TODO: convert this to r code
 # Install XGBoost
 system(paste("R CMD INSTALL ", getwd(),  "/xgboost_r_gpu_win64_21d95f3d8f23873a76f8afaad0fee5fa3e00eafe.tar.gz", sep=""))
 
@@ -293,9 +301,9 @@ params$gpu_acc = TRUE
 
 After installing all needed libaries you need to load them: 
 
-```{r Loading libaries, results="hide", message=F}
+```{r Loading libaries, results='hide', message=F}
 # TODO: use this line:
-# if(!require(dplyr)){install.packages("dplyr")}
+# if(!require(dplyr)){install.packages('dplyr')}
 
 require(dplyr)      # easy dataframe modification
 require(ggplot2)    # plotting
@@ -336,7 +344,7 @@ species_occurrences_all = sf::st_as_sf(species_occurrences_all, coords=c("x", "y
 
 # TODO: check level of border_pak data, is this the top level border?
 # political border of pakistan
-border_pak <- geodata::gadm(country="PAK", level=0, path="./data")
+border_pak <- geodata::gadm(country='PAK', level=0, path='./data')
 
 # bioclim data from pakistan
 bioclim_pak = geodata::worldclim_country(country="PAK", res=10, var="bio", path="data/", version = "2.1")
@@ -344,7 +352,7 @@ names(bioclim_pak)<-substr(names(bioclim_pak), 11, 20) # TODO: rename to mare me
 bioclim_pak = terra::mask(bioclim_pak, border_pak)
 
 # elevation data form pakistan
-elevation_pak = geodata::elevation_30s(country="PAK", path="data/")
+elevation_pak = geodata::elevation_30s(country='PAK', path='data/')
 
 ```
 
@@ -389,14 +397,6 @@ modeling_data = modeling_data_extracted
 
 rm(species_occurrences_all); rm(species_presence); rm(background_points); rm(species_absence); rm(modeling_data_); rm(extraction_bioclim_pak); rm(extraction_elevation_pak); rm(modeling_data_extracted)
 ```
-
-```{r dev env}
-# speed up runtime in dev environment, by only modeling one species
-if(params$dev) {
-  modeling_data = modeling_data %>% filter( species %in% c("Aglais_caschmirensis", "Pyrgus_alpinus", "Melitaea_mixta", "Lasiommata_tarbena", "Deudoryx_epijarbas", "Anaphaeis_aurota", NA) ) 
-}
-```
-
 
 ## ) Data overview
 
@@ -456,8 +456,6 @@ ggplot(species_nsamples, aes(n_samples)) +
        geom_vline(aes(xintercept=mean(n_samples)), linetype="dashed") +
        annotate(x=mean(species_nsamples$n_samples), y=+Inf, label=paste("Mean:",round(mean(species_nsamples$n_samples),2)), vjust=3, geom="label") +
        labs(x = "Number of Samples", y = "Number of Species")
-
-rm(species_nsamples)
 
 ```
 
@@ -675,16 +673,12 @@ sp = "Aglais_caschmirensis"
 prediction = rast(paste("./out/",sp,".tif", sep = ""))
 prediction = terra::mask(prediction, border_pak)
 
-ggplot() + 
-  geom_spatraster(data = prediction) +
-  scale_fill_hypso_c(direction = -1,
-                     limits=c(0,1),
-                     name = "Prediction") +
-  geom_sf(data = modeling_data %>% filter(species == sp),
-          size = 1,
-          shape = 1 ) +
-  geom_sf(data = sf::st_as_sf(border_pak),
-          fill = NA, show.legend=FALSE) +
+ggplot() + geom_spatraster(data=prediction, name="Prediction") +
+  #scale_fill_binned() +
+  #scale_alpha() + 
+  scale_fill_gradient(low="black", high="white") + 
+  geom_sf(data = modeling_data %>% filter(species == sp), mapping = aes(color = 'Observed'), size = 1, shape=1 ) +
+  geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) +
   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
 
 
@@ -703,7 +697,7 @@ rm(sp); rm(prediction); #rm(sp_model); rm(importance)
 ```
 
 For how many species is no prediction made?
--> pseudocode: count(max(raster) = 0)
+-> count(max(raster) = 0)
 
 
 
@@ -741,24 +735,21 @@ for(sp in (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$spec
   rm(r)
 } 
 
-rm(m)
-
 stack = terra::rast(l_species)
-species_richness = sum(stack); rm(stack)
-# Should be zero outside pakistan, since there is no prediction data?
-#species_richness = terra::mask(species_richness, border_pak)
+stack = sum(stack)
+stack = terra::mask(stack, border_pak)
 
-terra::writeRaster(species_richness, "out/species_richness.tif", overwrite=TRUE)
+# TODO: mask stack to pakistan
 
 ggplot() + 
-  geom_spatraster(data = species_richness) +
-  scale_fill_hypso_c(direction=-1, name="N° of species" ) +
+  geom_spatraster(data = stack) +
+  scale_fill_hypso_c(palette="spain", name="N° of species" ) +
+  #scale_fill_hypso_b(name="N° of species") +
   geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) +
   ggtitle("Species richness of butterflies in Pakistan")
 
 ggsave("SpeciesRichnessMap.png", path="out") 
 
-rm(l_species); rm(threshold)
 ```
 
 # ) Conclusion
