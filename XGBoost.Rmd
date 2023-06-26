@@ -398,6 +398,17 @@ modeling_data = modeling_data_extracted
 rm(species_occurrences_all); rm(species_presence); rm(background_points); rm(species_absence); rm(modeling_data_); rm(extraction_bioclim_pak); rm(extraction_elevation_pak); rm(modeling_data_extracted)
 ```
 
+
+```{r}
+if(params$dev)
+{
+  modeling_data = modeling_data %>% filter( species %in% c("Aglais_caschmirensis", "Colias_erate", "Zizeeria_karsandra", "Graphium_cloanthus", NA) ) 
+}
+```
+
+
+
+
 ## ) Data overview
 
 Being aware of your data is essentially in data science. You should constantly check the form of your data and adjust it if it does not fit the requirements. While developing code it's recommend to have some code snippets to check that. The following chunks represent a sample of code snippets being used to develop this tutorial. 
