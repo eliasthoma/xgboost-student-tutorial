@@ -8,7 +8,7 @@ output:
     toc: TRUE
     toc_float: TRUE
 params:
-    subset_samples: TRUE
+    dev: TRUE # shortens knit time, by only modeling one species
     output_plots: FALSE
     gpu_acc: FALSE
 ---
@@ -134,8 +134,8 @@ pre { /* Code block - determines code spacing between lines */
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(results = "hold")
 ```
+# ) Dummy notes area
 
-```{r notes, include=FALSE, eval=FALSE}
 https://juliasilge.com/blog/baseball-racing/
 XGBoost-Docs: https://xgboost.readthedocs.io/en/stable/
 https://dieghernan.github.io/tidyterra/reference/geom_spatraster.html
@@ -147,30 +147,26 @@ cbind: besser merge benutzen
 Interaktive Table:
 datatable(modeling_data)
 
-Senay, S. D., Worner, S. P., & Ikeda, T. (2013). Novel three-step pseudo-absence selection technique for improved species distribution modelling. PloS one, 8(8), e71218. Online availible under https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3742778/pdf/pone.0071218.pdf. Last checked 02.06.2022.
 
-```
+
+Senay, S. D., Worner, S. P., & Ikeda, T. (2013). Novel three-step pseudo-absence selection technique for improved species distribution modelling. PloS one, 8(8), e71218. Online availible under https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3742778/pdf/pone.0071218.pdf. Last checked 02.06.2022.
 
 # ) Introduction
 
-The following Tutorial is the final assessment of the project seminar “Species Distribution Modeling” at Philipps-University Marburg. In this tutorial  we're going to use the XGBoost algorithm to predict the specie´s distribution of butterflies in Pakistan and create a species richness map of the country. [XGBoost](https://cran.r-project.org/web/packages/xgboost/xgboost.pdf) (eXtreme Gradient Boosting) is a popular machine learning algorithm that belongs to the family of gradient boosting methods. It was developed by [Tianqi Chen](https://tqchen.com/). and uses a combination of gradient boosting, decision trees, regularization, gradient-based optimization, feature importance analysis, parallelization. All this make's it a robust and powerful algorithm that often delivers state-of-the-art results in various machine learning tasks.
-You will be introduced to the basic concepts of XGBoost and you'll be provided with a reproducible workflow to use XGBoost to build classification models.
+The following Tutorial is the final assessment of the project-seminar: “Species Distribution Modeling” at Philipps-University Marburg. In this tutorial we're going to use the XGBoost algorithm to predict the specie´s distribution of butterflies in Pakistan and create a species richness map of the country. [XGBoost](https://cran.r-project.org/web/packages/xgboost/xgboost.pdf) (eXtreme Gradient Boosting) is a popular machine learning algorithm that belongs to the family of gradient boosting methods. It was developed by [Tianqi Chen](https://tqchen.com/). and uses a combination of gradient boosting, decision trees, regularization, gradient-based optimization, feature importance analysis and parallelization. All this make's it a robust and powerful algorithm that often delivers state-of-the-art results in various machine learning tasks.
+You will be introduced to the basic concepts of XGBoost and we'll provide a reproducible workflow to use XGBoost to build classification models.
 
 
-# ) But what's XGBoost?
+# ) So how does XGBoost work?
 
-XGBoost is a ensemble Method same as Random Forrest, this means it combines the output of multiple Trees. But the methods differ in the  way the idividual Trees are build and how the results are combined.
-In Xgboost the Output oft the Trees aren't combined equally. Instead XGBoost uses a method called boosting.
-Boosting combines weak learner (small trees) sequentually so that the new tree corrects the errors oft he previous one.
-To understand this we have to look into some mathematical details. But dont worry when using XGBoost these details will be automated. Nevertheless its importand to understand these processes to optimize the algorithm later on.
+XGBoost is a ensemble Method such as Random Forrest, this means it combines the output of multiple Trees. But the methods differ in the way the idividual Trees are build and how the results are combined.
+In Xgboost the output oft the trees aren't combined equally. Instead XGBoost uses a method called boosting.
+Boosting combines weak learner (small trees) sequentually so that the new tree corrects the errors of the previous one.
+To understand this we have to look into some mathematical details. But dont worry when using XGBoost these details will be automated.
+Nevertheless its importand to understand these processes to optimize the algorithm later on.
 
-
-## ) So how does it exactly work?
-
-As said XGBoost builds on many concepts to deliver it's often outstanding results.
-We're going to start with the mathematical base concepts of how XGBoost builds trees.
-
-In this assessment were trying to classify geo-points if they're potential habitats for a number of butterfly species. In order to do that we need XGBoost to build classification trees. XGBoost work's also with regression but the process differs a little, so were not going to focus on that.
+As said XGBoost builds on many concepts to deliver it's results.
+We're going to start with how XGBoost builds trees and then progress trough the different tuning-parameters.
 
 
 <!-- Slideshow container -->
@@ -178,7 +174,7 @@ In this assessment were trying to classify geo-points if they're potential habit
 
 <div class="mySlides">
 <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhrAdT9U5a6js_clc19U2MySmViR5NAdMz5acOyTkolprWMt5-xYqLO8LgRgnCtHyt3UdKScfZtVNuoSkWNu8DfJe8aOeH4cxn1uWd7AarUOSMMOT5IPmMYegkyuxvN6qSBp26iFepdLY4FvCGs5XW9aO8rjT7tpsVNaotlPT0TcCWalyMXhddxZHwLxng/s1600/image1.jpeg" style="width:100%">  
-<div class="text">When building classification trees XGBoost evaluates each given point if a condition is met or not. In our case the green dots, with a value of one, represent the presence points. Red dots, with values of zero represent absence points. The black line in the middle is XGBoost's initial prediction. By default, it is 0.5, which means there is a 50% chance to find a butterfly at any given point.</div>
+<div class="text">In this assessment were trying to classify geo-points if they're potential habitats for a species or not. In order to do that we need XGBoost to build binary-regression trees, thus classifying a given point if a condition is met (=1) or not (=0). In our case the green dots, with a value of 1, represent the presence points. Red dots, with values of 0 represent absence points. The black line in the middle is XGBoost's initial prediction. By default, it is 0.5, which means there is a 50% chance to find a butterfly at any given point.</div>
 </div>
 
 <div class="mySlides">
@@ -255,45 +251,73 @@ function showSlides(n) {
 }
 </script>
 
-# ) Regularization & pruning
+# ) Regularization & Pruning
 
 How XGBoost builds trees is limited by  multiple regularization parameters:
 
 ## ) Lambda
 
-We've heard of Lambda when we're calculated the similarity-score. XGBoost default value for Lambda is 0 therefore we've been ignoring it. But when Lambda is set to >0 the similarity-score get's smaller because the denominator becomes larger. Thus Lambda prevents over-fitting.
-```{r}
-#![Cover/min_child_weigth](https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhmPwBMb_KTLxryPlbQUksG13KoiKE97D-lH2vseNhSeeHv4M8Vrz8#yTG8lMvyF6EIWt5LFwxCUN9Fb1JqZwjJi0H_kiX5agdqr2_KSqKkuEN3C6ed0wAqqjp7-2nl310WWnxgfCObLfHxPWjNNyT01BIcK_GQcFjWlD4xA3CRZ2kL_iCRaQMU_KXC7zx8/s#1600/lambda.jpg)
-```
+We've heard of Lambda when we're calculated the similarity-score. XGBoost default value for Lambda is 0 therefore we've been ignoring it. But when Lambda is set to > 0 the similarity-score get's smaller because the denominator becomes larger. Thus Lambda prevents over-fitting.
+
+</center>
 
 ```{r, echo=FALSE, out.width = '30%'}
 
 knitr::include_graphics("https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhmPwBMb_KTLxryPlbQUksG13KoiKE97D-lH2vseNhSeeHv4M8Vrz8yTG8lMvyF6EIWt5LFwxCUN9Fb1JqZwjJi0H_kiX5agdqr2_KSqKkuEN3C6ed0wAqqjp7-2nl310WWnxgfCObLfHxPWjNNyT01BIcK_GQcFjWlD4xA3CRZ2kL_iCRaQMU_KXC7zx8/s1600/lambda.jpg")
 ```
 
-## ) Cover/min_child_weigth
+## ) Cover or min_child_weigth
 
-Another regularization parameter is the Cover or min_child_weight. This parameter is also the reason why we haven't continued building our example tree. In XGBoost the default value for the cover is 1 wich means that every leaf with a cover value less than 1 doesn't get build.
-The cover for classification tree's is calculated by summing the previous probability times 1 minus the previous probability, for each residual in the leaf.
+Another regularization parameter is the cover or min_child_weight. This parameter is also the reason why we haven't continued building our example tree. In XGBoost the default value for the cover is 1 wich means that every leaf with a cover-value less than 1 get's pruned. When building regression-tree's
+the cover or min_child_weight of a leaf is just the number of residuals in the leaf. Wereas the cover for for binary-regression tree's is calculated by summing the previous probability times 1 minus the previous probability, for each residual in the leaf.
 
 ```{r, echo=FALSE, out.width = '100%'}
 
 knitr::include_graphics("https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgm8a-UAaRkFn0z90jWb4YuwIX6ExK1dE2yC_vOMmYls_BxTAdHKoHYfazNgYZwxzLCLhc3XMbyzOE63O3Azt8iEIcvBSxiLQfz40AkeL_OSDSeqY9BKrYAIg9IHG9hmANyurL1UxwmMSCMXNA5MS1fuG_Fzdf5_ynlX4bM4T8zdADbqh-nqZ1Vyk9QwpY/s1600/image7.jpg")
 ```
 
-# ) Pruning
+## ) Gamma
 
-Similar to Cover (min_child_weigth) Gamma is a regularization parameter that causes XGBoost to only build new leafs when the Gain-Value is larger than Gamma. 
+Similar to cover or min_child_weigth gamma is a regularization parameter that causes XGBoost to prune leafs.
+Gamma is a highly dependent regularization parameter, what mean's that there is no "good"-default-value. By default it's 0, therefore no regularization takes place. If a gamma-value > 0 is used XGBoost substract's gamma from the gain-value of each leaf and then removes all the leaf's with a negative result.
 
-```{r, echo=FALSE, out.width = '30%'}
+```{r, echo=FALSE, out.width = '100%'}
 
 knitr::include_graphics("https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiaz4IyygAkr4KxI2BiVDzw2GjUT25tokUIU1BkwoSLWOz6A7Km_CnAImcm7cY_7gBPi3juIUEkYCNW2MI5NVnSPjqMxYp0C-mG1MlH-eI-BWwZXEK7sNhW9Ki87HYu0DZHIGTGafT6J7f7msh9uh7BjTMyX4rT9nKDsIzjpX5kv-Pusaz7nhkJAClafnE/s1600/gamma.jpg")
 ```
 
-Therefore it prevents overfitting the trees to our data. Gamma is a highly specialized regularization parameter, what mean's that there is no "good" value. By default it's 0 therefore no regularization takes place. 
+For example if we take the previous calculated gain-value of our example tree of 3.8, a gamma-value of 4 would prune the whole tree down to the root. Thus no prediction. In contrast to this with the default-gamma-value of 0 XGBoost build's extremly large trees, thus overfitting the trees to the dataset and raising the computation time a lot.
+Therefore gamma prevents overfitting the trees to our data and make's the prediction more conservative but can also slow the whole process by preventing tree's being build.
 
-XGBoost substract's gamma from the Gain-Value and then removes the leaf if the result is a negative number.
-For example if we take the previous calculated Gain-Value of our example tree of 3.8 a gamma-value of 4 would prune the whole tree down to the root. But if the gamma-value is just 0 XGBoost can build extremly large trees thus overfitting the trees to the dataset and raising the computation time a lot.
+# ) New prediction.
+
+When the first tree is build the output-value of each leaf is calculated by dividing the sum of the residuals of a leaf and dividing the result by the previous prediction times 1 minus the previous prediction (for each residual) plus lambda.
+
+```{r, echo=FALSE, out.width = '100%'}
+
+knitr::include_graphics("https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjUcdme4IZU671hpqlujcljwbQE-oWVBHflZs3vzQlp-FAi9L46291m-IF-mNyWWCvO2YWuVFRXULWYZ5YfvfsW48_G-i5ejVmEDUhJ79RHVPRVLI3JT3KzZh-eI3rVM2r-t_VxDj2fKzUXgLlpXr_YkkcQYK63N87Xn1VvCImshOJwzM19P5fIts3ItFA/s1600/output.jpg")
+```
+
+For the leaf containing the residuals of our presence-point's it would look like this:
+
+```{r, echo=FALSE, out.width= "100%"}
+knitr::include_graphics("https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEimErCByaFe-qpUj1RPW7ijsR4GrGhKfX0AMU7BIwphLTju88SHPYXbtjF1LymqbeW7TElDVVwroGnMPVl2m8H6OZ9Hw2k1Efu2UMjo_wpU6565bayGjmc9Xt6pHhSx7Qvv0oXpNNnWcM3Zvqcfvy5gICuB6xUANorEFm_zNOXEYH_4HXq0tbqljTSaCBM/s1600/output_leaf.jpg")
+```
+After calculating the output-value the new prediction for the presence-point's is calculated by adding the log(odd's) to the learning-rate and multiplying with the output-value and then converting it to a logistic-function-probability.
+
+```{r, echo=FALSE, out.width = '100%'}
+
+knitr::include_graphics("https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEj49rPF3O8kucjs5gN06REIWy1I8oH8wuY4JYGHa2dyeA2F-0nz7_hgbSqD3IXZSZVaZx82g3xAlfINBRbyIdz0TbEAOxXz9sxQZXYIIUR0JnK7_E8_-gUMsf69tmsUJUjlK4HFFmR_HyMt4BiIfQgKXdrJrHwbCduGeakIu5mDiXlURMi6jkamjM64Ogk/s1600/new_prediction_math.jpeg")
+```
+
+Therefore the initial prediction for our presence-points in the next tree would be 0.64.
+```{r, echo=FALSE, out.width="100%"}
+knitr::include_graphics("https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhdBh6P6xgI7Y13NUK_WWV-XL1X5Re7AbLAzyhAL2I8hZBMAIxj8WQsVvhF9p80aTI6yLcvvvoS9V_4q4Daa5CODP4qn2prjl5ocH32Admdm30N3yS8erY1YdrfEDs-APTpBn0jjtjrWv5N3B-hoeFFLSv2gzTfNl5S8vXoi6D8hCSgzAPZtbG0rkko0eY/s1600/new_prediction_graph.jpg")
+```
+
+# ) Greedy Algorithm & Weighted quantiles
+
+
 
 # ) Application of XGBoost in R
 
