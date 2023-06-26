@@ -366,7 +366,7 @@ str(species_occurrences_all)
 if(params$subset_samples)
 {
   species_names <- (species_occurrences_all %>% distinct(species))$species
-  species_occurrences_all = species_occurrences_all %>% filter(species %in% species_names[1])
+  species_occurrences_all = species_occurrences_all %>% filter(species %in% c("Aglais_caschmirensis", species_names[1]))
   rm(species_names)
 }
 ```
