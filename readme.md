@@ -1,11 +1,12 @@
 # TODO
-* clean up repo
+* Repository aufräumen
 * set.seed() für Reproduzierbarkeit -> https://r-coder.com/set-seed-r/
 * ecospat::boice ??
 * Metrics::auc ??
 * LogLoss gegen N_Samples plotten
 * Package Versionen im Text nennen
-* Grafiken aus Vollständigkeit überprüfen
+* Grafiken auf Vollständigkeit prüfen
+* Dateipfade als Grafik-Links
 * Link zu StatQuest einfügen
 * BioClim Layer aussagekräftig benennen
 * Paramter Set aufräumen und besser darstellen
