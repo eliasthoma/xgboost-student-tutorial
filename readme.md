@@ -1,3 +1,22 @@
+# TODO
+* clean up repo
+* set.seed() für Reproduzierbarkeit -> https://r-coder.com/set-seed-r/
+* ecospat::boice ??
+* Metrics::auc ??
+* LogLoss gegen N_Samples plotten
+* Package Versionen im Text nennen
+* Grafiken aus Vollständigkeit überprüfen
+* Link zu StatQuest einfügen
+* BioClim Layer aussagekräftig benennen
+* Paramter Set aufräumen und besser darstellen
+* TOC collapse deaktivieren
+* Vergleich von GPU vs. CPU
+* Shap values darstellen und beschreiben
+* Dense/Sparse Matrix efficency erläutern
+* Test Daten
+* Caret oder Tidymodels als weiterführende Packete für Paramter Tuning
+* fix time measurement code
+
 # Einbinden des Submodules in das eigene Git-Repository
 
 Eine git-bash im Ordner des Git-Repository öffnen und
