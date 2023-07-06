@@ -1,137 +1,23 @@
 ---
 title: "Tutorial: Using XGBoost for Species-Distribution-Modelling"
+author: Elias Thoma, Noah Hahneiser
 output: 
   html_document:
     theme: united
-    numbered: TRUE
+    css: "style.css"
+#    numbered: TRUE
     number_section: TRUE
     toc: TRUE
-    toc_float: TRUE
+    toc_float:
+      collapsed: FALSE
 params:
-    subset_samples: TRUE
-    gpu_acc: FALSE
+    subset_samples: TRUE # PARAM subset_samples: used to select only two species for knitting, speeds up the process if you want a fast knit
+    gpu_acc: FALSE       # PARAM gpu_acc: XGBoost GPU accelaration requires special binaries to be installed, but speeds up training and !especially! prediction
 ---
-
-<style type="text/css">
- { /* Normal  */
-      
-  }
- body .main-container {
-        max-width: 2000px;
-        font-size: 16px;
-    }
-td {  /* Table  */
-  font-size: 9px;
-}
-h1.title {
-  font-size: 20px;
-  color: DarkRed;
-}
-h1 { /* Header 1 */
-  font-size: 18px;
-  color: DarkRed;
-}
-h2 { /* Header 2 */
-    font-size: 16px;
-  color: DarkRed;
-}
-h3 { /* Header 3 */
-  font-size: 14px;
-  font-family: "Times New Roman", Times, serif;
-  color: DarkBlue;
-}
-code.r{ /* Code block */
-    font-size: 14px;
-}
-pre { /* Code block - determines code spacing between lines */
-    font-size: 12px;
-}
-</style>
-
-<!-- style for image slider  -->
-<style>
-  * {box-sizing:border-box}
-
-/* Slideshow container */
-.slideshow-container {
-  max-width: 800px;
-  position: relative;
-  margin: auto;
-}
-
-/* Hide the images by default */
-.mySlides {
-  display: none;
-  padding: 0px 30px;
-}
-
-/* Next & previous buttons */
-.prev, .next {
-  cursor: pointer;
-  position: absolute;
-  top: 50%;
-  width: auto;
-  margin-top: -22px;
-  padding: 16px;
-  color: white;
-  font-weight: bold;
-  font-size: 18px;
-  transition: 0.6s ease;
-  border-radius: 0 3px 3px 0;
-  user-select: none;
-  background-color: rgba(0,0,0,0.8);
-}
-
-/* Position the "next button" to the right */
-.next {
-  right: 0;
-  border-radius: 3px 0 0 3px; 
-}
-
-/* On hover, add a black background color with a little bit see-through */
-.prev:hover, .next:hover {
-  background-color: rgba(0,0,0,0.8);
-}
-
-/* Caption text */
-.text_old {
-  color: #f2f2f2;
-  font-size: 15px;
-  padding: 8px 12px;
-  position: absolute;
-  bottom: 8px;
-  width: 100%;
-  text-align: center;
-}
-
-.text {
-  color: black;
-  font-size: 15px;
-  padding: 8px 12px;
-  width: 100%;
-  text-align: center;
-  min-height: 60px;
-}
-
-/* The dots/bullets/indicators */
-.dot {
-  cursor: pointer;
-  height: 15px;
-  width: 15px;
-  margin: 0 2px;
-  background-color: #bbb;
-  border-radius: 50%;
-  display: inline-block;
-  transition: background-color 0.6s ease;
-}
-
-.active, .dot:hover {
-  background-color: #717171;
-}
-</style>
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(results = "hold")
+knitr::opts_chunk$set(fig.align = "center")
 ```
 
 ```{r notes, include=FALSE, eval=FALSE}
@@ -141,7 +27,6 @@ https://dieghernan.github.io/tidyterra/reference/geom_spatraster.html
 https://www.youtube.com/watch?v=gKyUucJwD8U&list=WL&index=71
 https://www.geeksforgeeks.org/xgboost/
 
-cbind: besser merge benutzen
 
 Interaktive Table:
 datatable(modeling_data)
@@ -164,44 +49,43 @@ Boosting combines weak learner (small trees) sequentually so that the new tree c
 To understand this we have to look into some mathematical details. But dont worry when using XGBoost these details will be automated. Nevertheless its importand to understand these processes to optimize the algorithm later on.
 
 
-## ) So how does it exactly work?
+# ) So how does it exactly work?
 
 As said XGBoost builds on many concepts to deliver it's often outstanding results.
 We're going to start with the mathematical base concepts of how XGBoost builds trees.
 
 In this assessment were trying to classify geo-points if they're potential habitats for a number of butterfly species. In order to do that we need XGBoost to build classification trees. XGBoost work's also with regression but the process differs a little, so were not going to focus on that.
 
-
 <!-- Slideshow container -->
 <div class="slideshow-container">
 
 <div class="mySlides">
-<img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhrAdT9U5a6js_clc19U2MySmViR5NAdMz5acOyTkolprWMt5-xYqLO8LgRgnCtHyt3UdKScfZtVNuoSkWNu8DfJe8aOeH4cxn1uWd7AarUOSMMOT5IPmMYegkyuxvN6qSBp26iFepdLY4FvCGs5XW9aO8rjT7tpsVNaotlPT0TcCWalyMXhddxZHwLxng/s1600/image1.jpeg" style="width:100%">  
+<img src="images/image1.jpeg" style="width:100%">  
 <div class="text">When building classification trees XGBoost evaluates each given point if a condition is met or not. In our case the green dots, with a value of one, represent the presence points. Red dots, with values of zero represent absence points. The black line in the middle is XGBoost's initial prediction. By default, it is 0.5, which means there is a 50% chance to find a butterfly at any given point.</div>
 </div>
 
 <div class="mySlides">
-<img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgDNS7NaU14obTeIdPoNMZGf3zl6y5PtL6RFqW4R9DpyQnJ08VoXx656ubQ4YYmn7SkdDI8TSyfnZtZeLmZ0rdd1gdsOn1vnVsmow7wsfptuMCMm7cxQyxHs6JVcdqhE7pMaJ6e6mP7abHtEkrnOelaK0oIBGpnWhpoEnldhUgK3EFyBqT_8JAyAYIDHg4/s1600/image2.jpeg" style="width:100%">
+<img src="images/image2.jpeg" style="width:100%">
 <div class="text">In the next step XGBoost calculates the residuals of all given points. The residuals are the difference between the observed prediction and the predictet. If the observed value is one (i.e., a presence point), the residuals are 0.5. The same applies to values of zero (i.e., absence points) where the residuals are -0.5.</div>
 </div>
 
 <div class="mySlides">
-<img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgRsgLPZq5EfK0nt-jMyi2dRi3dg0CXvEGYVaKdTCZuKMYVymUEGzV3dTlGZ8biZnw2nZuU64y6bQnEz2MzByxq_oc_KMakRqAqpSuAY8yNvqLS-eGfpLXLRGsFzeDMpGH20jEoejFqcOoL56z3uWfHI-h2-tLvnEPZgCxdjn8VQfCJGsCH7lVY3W1qWWg/s1600/image3.jpeg" style="width:100%">
+<img src="images/image3.jpeg" style="width:100%">
 <div class="text">In order to find the threshhold of parameters that influence the probability of a point being a presence or absence point the data has to be split at the crucial values of that parameter.</div>
 </div>
 
 <div class="mySlides">
-<img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjhM9-yn-gtedu2-iH4cr4yfeC4zVSV-vaXaPCNIL2ZTi1-UdAhdBtopQDIlPkeWj85zUpy5yVD9vMMn-M3wyTMUPcDplwORV6qGLA4SkLhPGsUlzy-YOOvyBUV40M330ReHUC-hVXpn5f0aZeCc2Fyeogfe51Ci8DIMI2qxM1LTqnsbVTWn2pFTIx0nqM/s1600/image4.jpeg" style="width:100%">
+<img src="images/image4.jpeg" style="width:100%">
 <div class="text">Therefore XGBoost splits the observations at thresholds that result in the highest gain value. But whats the gain-value?</div>
 </div>
 
 <div class="mySlides">
-<img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEg7R0oWdDQqkK6MXSD6zqchi27Fsun5UK2aal9TcArMU_jUCPJEh4VbxCa--ZxVHijWvU_y3vPmk87C9ToUjK856o3DpQCGDSG5fPkcs8GGRIfs3iUmtSgFzS2FVum_dFcvG5w9_OlfLd9DrCXI9Eh8MlSIQ4YIcF0_w6FwBHh9SCjIqq24xbrlV-w0Irg/s1600/image5.jpeg" style="width:100%">
+<img src="images/image5.jpeg" style="width:100%">
 <div class="text">To calculate the gain-value we need the similarity-score of each leaf and the root.</div>
 </div>
 
 <div class="mySlides">
-<img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhelYfzAkKKurpxMj1xCuwF0aLNWrJ2JSSqs5OFXNyxFNKfr8GXcNgDLHqAg8KnNfI3hDsviapqnKO5elMpnHAZLYGZNL-wEzMEL7LdT55k3F9aHajhAtxQc1JkcQNdeYh4601gcsCDbU1wmaokkadKOBPd347OEJHQFjNQcQ_qQV_cM2kXOZ3l3Z0VrCg/s1600/image6.jpeg" style="width:100%">
+<img src="images/image6.jpeg" style="width:100%">
 <div class="text">By summing the similarity-scores of the left and the right leaf and then substracting the similarity-score of the root we get the gain-value. In this case it's 3.8 and the highest possible for this dataset therefore this would be the final tree. But why doesn't XGBoost split the residuals any further? This has to do with regularization parameters and pruning wich we're going to explain in the next chapter.</div>
 </div>
 
@@ -254,39 +138,33 @@ function showSlides(n) {
 }
 </script>
 
-# ) Regularization & pruning
+## ) Regularization & pruning
 
 How XGBoost builds trees is limited by  multiple regularization parameters:
 
-## ) Lambda
+### ) Lambda
 
 We've heard of Lambda when we're calculated the similarity-score. XGBoost default value for Lambda is 0 therefore we've been ignoring it. But when Lambda is set to >0 the similarity-score get's smaller because the denominator becomes larger. Thus Lambda prevents over-fitting.
-```{r}
-#![Cover/min_child_weigth](https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhmPwBMb_KTLxryPlbQUksG13KoiKE97D-lH2vseNhSeeHv4M8Vrz8#yTG8lMvyF6EIWt5LFwxCUN9Fb1JqZwjJi0H_kiX5agdqr2_KSqKkuEN3C6ed0wAqqjp7-2nl310WWnxgfCObLfHxPWjNNyT01BIcK_GQcFjWlD4xA3CRZ2kL_iCRaQMU_KXC7zx8/s#1600/lambda.jpg)
+
+```{r, echo=FALSE, out.width = '10%'}
+knitr::include_graphics("images/lambda.jpg")
 ```
 
-```{r, echo=FALSE, out.width = '30%'}
-
-knitr::include_graphics("https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhmPwBMb_KTLxryPlbQUksG13KoiKE97D-lH2vseNhSeeHv4M8Vrz8yTG8lMvyF6EIWt5LFwxCUN9Fb1JqZwjJi0H_kiX5agdqr2_KSqKkuEN3C6ed0wAqqjp7-2nl310WWnxgfCObLfHxPWjNNyT01BIcK_GQcFjWlD4xA3CRZ2kL_iCRaQMU_KXC7zx8/s1600/lambda.jpg")
-```
-
-## ) Cover/min_child_weigth
+### ) Cover/min_child_weigth
 
 Another regularization parameter is the Cover or min_child_weight. This parameter is also the reason why we haven't continued building our example tree. In XGBoost the default value for the cover is 1 wich means that every leaf with a cover value less than 1 doesn't get build.
 The cover for classification tree's is calculated by summing the previous probability times 1 minus the previous probability, for each residual in the leaf.
 
-```{r, echo=FALSE, out.width = '100%'}
-
-knitr::include_graphics("https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgm8a-UAaRkFn0z90jWb4YuwIX6ExK1dE2yC_vOMmYls_BxTAdHKoHYfazNgYZwxzLCLhc3XMbyzOE63O3Azt8iEIcvBSxiLQfz40AkeL_OSDSeqY9BKrYAIg9IHG9hmANyurL1UxwmMSCMXNA5MS1fuG_Fzdf5_ynlX4bM4T8zdADbqh-nqZ1Vyk9QwpY/s1600/image7.jpg")
+```{r, echo=FALSE, out.width = '70%', fig.align="center"}
+knitr::include_graphics("images/image7.jpg")
 ```
 
-# ) Pruning
+## ) Pruning
 
 Similar to Cover (min_child_weigth) Gamma is a regularization parameter that causes XGBoost to only build new leafs when the Gain-Value is larger than Gamma. 
 
-```{r, echo=FALSE, out.width = '30%'}
-
-knitr::include_graphics("https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiaz4IyygAkr4KxI2BiVDzw2GjUT25tokUIU1BkwoSLWOz6A7Km_CnAImcm7cY_7gBPi3juIUEkYCNW2MI5NVnSPjqMxYp0C-mG1MlH-eI-BWwZXEK7sNhW9Ki87HYu0DZHIGTGafT6J7f7msh9uh7BjTMyX4rT9nKDsIzjpX5kv-Pusaz7nhkJAClafnE/s1600/gamma.jpg")
+```{r, echo=FALSE, out.width = '25%', fig.align="center"}
+knitr::include_graphics("images/gamma.jpg")
 ```
 
 Therefore it prevents overfitting the trees to our data. Gamma is a highly specialized regularization parameter, what mean's that there is no "good" value. By default it's 0 therefore no regularization takes place. 
@@ -303,49 +181,50 @@ Docuementation is available here: https://xgboost.readthedocs.io/en/stable/
 
 Before you dive into the code you need to install some packages this script will use: 
 
-```{r Install packages, eval=FALSE}
+```{r Install depencies, eval=FALSE}
 install.packages("terra")
 install.packages("ggplot2")
 install.packages("fastDummies")
 install.packages("tidyterra")
 ```
 
-The XGBoost package can by installed in two different ways. First there is the default package from CRAN, which will do it in most situations.
-```{r Setup from CRAN, eval=F}
-#install.packages("xgboost")
+The XGBoost package can by installed in two different ways:
+* First there is the default package from CRAN, which will do it in most situations.
+
+```{r XGBoost setup from CRAN, eval=FALSE}
+install.packages("xgboost")
 ```
-But if you are dealing with large data sets you may want to use GPU acceleration. Therefor you have to use a prebuild package from GITHUB (https://github.com/dmlc/xgboost/releases). Download it, place it in the same folder as this script and run the commands below. For Benchmarks of a High-End CPU vs Low-End GPU, see https://medium.com/data-design/xgboost-gpu-performance-on-low-end-gpu-vs-high-end-cpu-a7bc5fcd425b. Risks? Reproducability?
+
+* But if you are dealing with large data sets you may want to use GPU acceleration. Therefor you have to use a prebuild package from GITHUB (https://github.com/dmlc/xgboost/releases). Download it, place it in the same folder as this script and run the commands below. 
+
+TODO: For Benchmarks of a High-End CPU vs Low-End GPU, see https://medium.com/data-design/xgboost-gpu-performance-on-low-end-gpu-vs-high-end-cpu-a7bc5fcd425b. Risks? Reproducability?
+
 ```{r Setup for GPU acceleration, eval=FALSE}
 ##
 ## !! Installation on windows failed with "Warning in system("sh ./configure.win") 'sh' not found", for dirty Solution see section Troubleshooting
 ##
 
-detach("package:xgboost")
-
 # Install dependencies
-system('R -q -e "install.packages(c(\'data.table\', \'jsonlite\'))"') # TODO: convert this to r code
+install.packages(c("data.table", "jsonlite"))
+
 # Install XGBoost
 system(paste("R CMD INSTALL ", getwd(),  "/xgboost_r_gpu_win64_21d95f3d8f23873a76f8afaad0fee5fa3e00eafe.tar.gz", sep=""))
 
-require(xgboost)
-
-params$gpu_acc = TRUE
 ```
+
+Don't forget to enable CPU acceleration in the knitting paramters.
 
 After installing all needed libaries you need to load them: 
 
 ```{r Loading libaries, results='hide', message=FALSE}
-# TODO: use this line:
-# if(!require(dplyr)){install.packages('dplyr')}
-
 require(dplyr)      # easy dataframe modification
 require(ggplot2)    # plotting
 
 require(geodata)    # downloading geospatial world dataset made easy
 require(sf)         # simple geospatial features
-require(terra)
+require(terra)      # raster manipulation
 
-require(tidyterra)  # plot terra object with ggplot
+require(tidyterra)  # plot terra objects with ggplot
 
 require(fastDummies)# create binary factor columns from character column
 require(xgboost)    # our modeling libary
@@ -361,7 +240,10 @@ species_occurrences_all <- sf::st_as_sf(species_occurrences_all, coords=c("x", "
 
 str(species_occurrences_all)
 ```
-```{r, include=FALSE}
+
+
+```{r Subsetting species for development, include=FALSE}
+# PARAM subset_samples: 
 if(params$subset_samples)
 {
   species_names <- (species_occurrences_all %>% distinct(species))$species
@@ -376,7 +258,7 @@ ggplot() +
   ggtitle("Oberserved occurrence of butterflies in Pakistan")
 ```
 
-Next we need some environmental data to train the model. Therefor we selected the bioclim data, which are widely used in speceis distribution modeling (Source: https://isprs-archives.copernicus.org/articles/XLII-4-W19/449/2019/isprs-archives-XLII-4-W19-449-2019.pdf#:~:text=The%20earliest%20studies%20of%20SDM%20used%20BIOCLIM%20-,requires%20species%20occurrence%20data%20%28latitude%2C%20longitude%2C%20and%20elevation%29.). Bioclim is missing elevation data, we will use those too, since temperature is depend on elevation. The Border of Pakistan is also needed, we will crop our data with that, so the model doesn't train areas were does not have presence points.
+Next we need some environmental data to train the model. Therefor we selected the bioclim data, which are widely used in speceis distribution modeling (Source: https://isprs-archives.copernicus.org/articles/XLII-4-W19/449/2019/isprs-archives-XLII-4-W19-449-2019.pdf#:~:text=The%20earliest%20studies%20of%20SDM%20used%20BIOCLIM%20-,requires%20species%20occurrence%20data%20%28latitude%2C%20longitude%2C%20and%20elevation%29.). The Bioclim layers are missing elevation data, we will use those too, since temperature is dependent on elevation. The Border of Pakistan is also needed, we will crop our data with that, so the model doesn't train areas we don't not have presence points. The elevation data is alread cropped so we don't need to repeat this.
 
 ```{r Loading environmental data, message=FALSE, warning=FALSE}
 # political border of pakistan
