@@ -1,18 +1,16 @@
 # TODO
-* set.seed() für Reproduzierbarkeit -> https://r-coder.com/set-seed-r/
 * ecospat::boice ??
 * Metrics::auc ??
 * LogLoss gegen N_Samples plotten
 * Package Versionen im Text nennen
 * Link zu StatQuest einfügen
-* BioClim Layer aussagekräftig benennen
 * Paramter Set aufräumen und besser darstellen
 * Vergleich von GPU vs. CPU
 * Shap values darstellen und beschreiben
 * Dense/Sparse Matrix efficency erläutern
 * Test Daten
 * Caret oder Tidymodels als weiterführende Packete für Paramter Tuning
-* fix time measurement code
+* Explain logloss
 
 # Einbinden des Submodules in das eigene Git-Repository
 

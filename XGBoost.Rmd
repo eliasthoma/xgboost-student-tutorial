@@ -230,6 +230,12 @@ require(fastDummies)# create binary factor columns from character column
 require(xgboost)    # our modeling libary
 ```
 
+```{r Set seed}
+set.seed("101")
+```
+
+
+
 ## ) Data preparation
 
 Let's begin with preparing the data used to train the model. Start with getting a overview of the provided data:
@@ -260,6 +266,8 @@ ggplot() +
 
 Next we need some environmental data to train the model. Therefor we selected the bioclim data, which are widely used in speceis distribution modeling (Source: https://isprs-archives.copernicus.org/articles/XLII-4-W19/449/2019/isprs-archives-XLII-4-W19-449-2019.pdf#:~:text=The%20earliest%20studies%20of%20SDM%20used%20BIOCLIM%20-,requires%20species%20occurrence%20data%20%28latitude%2C%20longitude%2C%20and%20elevation%29.). The Bioclim layers are missing elevation data, we will use those too, since temperature is dependent on elevation. The Border of Pakistan is also needed, we will crop our data with that, so the model doesn't train areas we don't not have presence points. The elevation data is alread cropped so we don't need to repeat this.
 
+Read more here https://www.worldclim.com/bioclim
+
 ```{r Loading environmental data, message=FALSE, warning=FALSE}
 # political border of pakistan
 border_pak <- geodata::gadm(country='PAK', level = 0, path='./data')
@@ -268,13 +276,33 @@ ggplot() +
 
 # bioclim data from pakistan
 bioclim_pak <- geodata::worldclim_country(country = "PAK", res = 10, var = "bio", path = "data/", version = "2.1")
-names(bioclim_pak) <- substr(names(bioclim_pak), 11, 20) # TODO: rename to mare meaningful names or show table of layers in text
+names(bioclim_pak) <- substr(names(bioclim_pak), 11, 20)
+
+
+#names(bioclim_pak) <- c("Annual Mean Temperature",
+#  "Mean Diurnal Range",
+#  "Isothermality",
+#  "Temperature Seasonality",
+#  "Max Temperature of Warmest Month",
+#  "Min Temperature of Coldest Month",
+#  "Temperature Annual Range",
+#  "Mean Temperature of Wettest Quarter",
+#  "Mean Temperature of Driest Quarter",
+#  "Mean Temperature of Warmest Quarter",
+#  "Mean Temperature of Coldest Quarter",
+#  "Annual Precipitation",
+#  "Precipitation of Wettest Month",
+#  "Precipitation of Driest Month",
+#  "Precipitation Seasonality",
+#  "Precipitation of Wettest Quarter",
+#  "Precipitation of Driest Quarter",
+#  "Precipitation of Warmest Quarter",
+#  "Precipitation of Coldest Quarter"
+#  )
+
 bioclim_pak <- terra::mask(bioclim_pak, border_pak)
-ggplot() + 
-  geom_spatraster(data = bioclim_pak) +
-  facet_wrap(~lyr) +
-  geom_sf(data = sf::st_as_sf(border_pak), fill = NA, show.legend = FALSE) + 
-  ggtitle("Bioclim data of Pakistan")
+
+plot(bioclim_pak)
 
 # elevation data form pakistan
 elevation_pak <- geodata::elevation_30s(country = 'PAK', path = 'data/')
@@ -288,6 +316,9 @@ So lets define our species_occurrences as presence points :
 
 ```{r presence points}
 species_presence <- species_occurrences_all
+# adding col presence to determine presence for model training
+species_presence <- cbind(species_presence, data.frame(presence = factor(1)))
+
 rm(species_occurrences_all)
 ```
 
@@ -299,25 +330,26 @@ As absence points we will user random Points in Pakistan and combine them with t
 border_pak <- sf::st_as_sf(border_pak)
 species_absence <- sf::st_sample(border_pak, size = 1000)
 
-# TODO: add col for occurrence = 1 or occurrence = 0 here, dummycols can then be thrown away
 # adding col species = NA to the background points, needed for rbind to join the data
+# adding col presence to determine absence for model training
 species_absence <- cbind(species_absence, data.frame(species = as.character(NA)))
+species_absence <- cbind(species_absence, data.frame(presence = factor(0)))
 species_absence <- sf::st_as_sf(species_absence)
 
 # Combine presence and absence (background) points into a single object
-modeling_data_ <- rbind(species_presence, species_absence)
+modeling_data <- rbind(species_presence, species_absence)
 
 # Only points inside Pakistan should be used for modeling, also remove the columns added by the intersection. 
-modeling_data_ <- sf::st_intersection(modeling_data_, border_pak) %>% select(-COUNTRY, -GID_0)
+modeling_data <- sf::st_intersection(modeling_data, border_pak) %>% select(-COUNTRY, -GID_0)
 ```
 
 Now we got our presence and absence points as spatial data. Finally we will extract values from our environmental data and add those to our modeling data, so xgboost can use this table to train its model.
 
 ```{r extract}
 # Extract values from bioclim and elevation, join them to our modeling_data
-extraction_bioclim_pak <- terra::extract(bioclim_pak, modeling_data_, bind=FALSE, ID=FALSE)
-extraction_elevation_pak <- terra::extract(elevation_pak, modeling_data_, bind=FALSE, ID=FALSE)
-modeling_data_extracted <- cbind( modeling_data_, extraction_bioclim_pak, extraction_elevation_pak)
+extraction_bioclim_pak <- terra::extract(bioclim_pak, modeling_data, bind=FALSE, ID=FALSE)
+extraction_elevation_pak <- terra::extract(elevation_pak, modeling_data, bind=FALSE, ID=FALSE)
+modeling_data_extracted <- cbind( modeling_data, extraction_bioclim_pak, extraction_elevation_pak)
 ```
 
 Clean up of no longer needed variables and check the final modeling data:
@@ -350,37 +382,17 @@ ggplot(species_nsamples, aes(n_samples)) +
 
 rm(species_nsamples)
 ```
+TODO it would be better to buffer the presence points and remove close absence points
+
 
 ## ) Training  and prediction with xgboost
 
 Starting with the training of our xgboost model we decided to do sperate training for every model. Despite that xgboost is capable of Multi-Classificiation. Therefor we defined a function 'train' wich invokes out data filtering and xgboost specific data preperation to meet the requirements of xgboost. Espacially converting the modeling data into a 'xgb.DMatrix' object. Finally we define some general parameters we want to use, e.g. enable of gpu acceleration by knit paramters. Last but not least we save the model to the disk to preserve it for modeling.
 
 
-```{r training function}
-train <- function(
-    data, # training data, required
-    sp, # species name, required
-    xgb_params = list("nrounds" = 1000), # xgboost params, see https://xgboost.readthedocs.io/en/latest/parameter.html
-    save_model = TRUE 
-) {
-# filter modeling data to current species, don't forget the absence points!
-data <- modeling_data %>% filter(species == sp | is.na(species))
-data <- dummy_columns(data, select_columns = "species",
-                      ignore_na = TRUE, 
-                      remove_selected_columns = TRUE)
-  
-# make dummy_columns name persistent over all species
-# replace NA values with 0
-data <- data %>% 
-  rename(species_occurrence = starts_with("species_")) %>%
-  mutate(species_occurrence = ifelse(is.na(species_occurrence), 0, species_occurrence)) %>%
-  mutate(species_occurrence = factor(species_occurrence))
-  
-# xgboost need a specific data format  
-data <- xgb.DMatrix(
-  data = as.matrix(data %>% select(-species_occurrence, -geometry)), 
-  label = as.matrix(data %>% select(species_occurrence))  
-)
+https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.core
+DMatrix is an internal data structure that is used by XGBoost, which is optimized for both memory efficiency and training speed. You can construct DMatrix from multiple different sources of data.
+
 
 # enable gpu acceleration only if wanted
 if(params$gpu_acc) {
@@ -389,30 +401,126 @@ if(params$gpu_acc) {
   xgb_params = c(xgb_params, sampling_method = "gradient_based")
 }
 #xgb_params = c(xgb_params, eval_metric="error") # Binary classification error rate. It is calculated as #(wrong cases)/#(all cases). For the predictions, the evaluation will regard the instances with prediction value larger than 0.5 as positive instances, and the others as negative instances.
-xgb_params = c(xgb_params, objective = "binary:logistic") # logistic regression for binary classification, output probability
 
-model <- xgboost(data = data,
-                 verbose = 0,            # 0 (silent), 1 (warning), 2 (info), 3 (debug)
-                 nrounds = xgb_params$nrounds,
-                 params = xgb_params
+
+# we want to use binary classification with logistic regression, which outputs a probability
+
+
+
+```{r training function}
+train <- function(
+    data, # training data, required
+    nrounds,
+    xgb_params = list(), # xgboost params, see https://xgboost.readthedocs.io/en/latest/parameter.html
+    sp, # species name, only required if save_model = TRUE
+    save_model = TRUE 
+) {
+  
+  # xgboost needs training data in a specific data format, which provides memory and speed optimization
+  data <- xgb.DMatrix(
+    data = as.matrix(as.data.frame(data) %>% select(-species, -presence, -geometry)), 
+    label = as.matrix(as.data.frame(data) %>% select(presence))
+  )
+
+  xgb_params = c(xgb_params, objective = "binary:logistic") # logistic regression for binary classification, output probability
+
+  model <- xgboost(data = data,
+                 nrounds = nrounds,
+                 params = xgb_params,
+                 verbose = 0
                  )
 
-message(paste("train_logloss:", mean(model[["evaluation_log"]][["train_logloss"]])))
+  message(paste("avg train-logloss:", mean(model[["evaluation_log"]][["train_logloss"]])))
   
-if(save_model)
-{
-  xgb.save(model, paste("out/", sp, ".model", sep = ""))  # Max compatibility with future xgboost versions
-  save(model, file = paste("out/", sp, ".rds", sep = "")) # Fully restorable r object
-}
+  if(save_model)
+  {
+    xgb.save(model, paste("out/", sp, ".model", sep = ""))  # Max compatibility with future xgboost versions
+    #save(model, file = paste("out/", sp, ".rds", sep = "")) # Fully restorable r object
+  }
   
-return(model)
+  return(model)
 }
 ```
 
 Additional training paramters are defined here in a own data frame. Advantage of this are the comparability and useability of the different parameter sets. The Table show the default parameter, one set taken from Roozbeh Valavi et. al. And last the parameters we will user for training. Those have been tested and tuned manually.
 
 
-```{r training parameter}
+```{r prediction data}
+# gen stack from rasters bioclim_pak and elevation_pak
+elev_pak = resample(elevation_pak, bioclim_pak)
+ext(elevation_pak) <- ext(bioclim_pak)
+prediction_rstack = c(bioclim_pak, elev_pak)
+
+# Remove values outside pakistan, because otherwise the model will make predictions outside the modeling area
+prediction_rstack = terra::mask(prediction_rstack, border_pak)
+```
+
+
+```{r prediction function}
+# We need to make a custom predict function for terra::predict() since xgboost didn't take a data.frame as input. See https://stackoverflow.com/questions/71947124/predict-xgboost-model-onto-raster-stack-yields-error
+predict_custom <- function(model, data, ...) 
+{
+  stats::predict(model, newdata=as.matrix(data), ...)
+}
+
+
+
+
+
+predict <- function(model, # xgboost model as object
+                    prediction_data # prediction data as spatraster stack
+)
+{
+
+  #model = xgb.load(paste("out/", sp, "/" ,sp, ".model", sep = ""))
+  #model = readRDS(paste("out/", sp, "/" ,sp, ".bin", sep = ""))
+  prediction = terra::predict(object=prediction_data,
+                       model=model,
+                       fun=predict_custom
+  )
+  return(prediction)
+}
+```
+
+## ) Example model for species "Aglais_caschmirensis"
+
+Now we can train and predict our first species:
+
+```{r Sample Aglais_caschmirensis 1}
+sp = "Aglais_caschmirensis"
+
+#TODO
+# filter modeling data to current species, don't forget the absence points!
+data <- modeling_data %>% filter(species == sp | is.na(species))
+
+model <- train(data, nrounds = 10, save_model = FALSE)
+
+prediction <- predict(model, prediction_rstack)
+
+ggplot() + 
+  geom_spatraster(data = prediction) +
+  scale_fill_hypso_c(direction = -1,
+                     limits=c(0,1),
+                     name = "Prediction") +
+  geom_sf(data = modeling_data %>% filter(species == sp),
+          size = 1,
+          shape = 1 ) +
+  geom_sf(data = sf::st_as_sf(border_pak),
+          fill = NA, show.legend=FALSE) +
+   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan", "\ntrain-logloss:", mean(model[["evaluation_log"]][["train_logloss"]])))
+
+rm(sp); rm(data); rm(model); rm(prediction)
+```
+
+As logloss is very high and the map
+
+
+
+
+
+
+
+```{r training parameter, eval=F}
 rm(xgboost_params)
 
 xgboost_params <- data.frame("dataset" = character(), 
@@ -443,108 +551,7 @@ print(xgboost_params)
 
 Next is to perpare data used to predic species occurrence in pakistan. Therefore we will use the raw raster data and predict of those with 'terra::predict' which allows us to pass on a 'Spatraster' object. XGBoost can't handle Spatraster, so 'terra:predict' allows as to define a custom prediction function, which converts data into a matrix.
 
-```{r prediction data}
-# gen stack from rasters bioclim_pak and elevation_pak
-elev_pak = resample(elevation_pak, bioclim_pak)
-ext(elevation_pak) <- ext(bioclim_pak)
-prediction_rstack = c(bioclim_pak, elev_pak)
 
-# Remove values outside pakistan, because otherwise the model will make predictions outside the modeling area
-prediction_rstack = terra::mask(prediction_rstack, border_pak)
-```
-
-
-```{r prediction function}
-# We need to make a custom predict function for terra::predict() since xgboost didn't take a data.frame as input. See https://stackoverflow.com/questions/71947124/predict-xgboost-model-onto-raster-stack-yields-error
-prediction_custom <- function(model, data, ...) {
-  stats::predict(model, newdata=as.matrix(data), ...)
-}
-
-predict <- function(model, prediction_data, plots=FALSE)
-{
-
-  #model = xgb.load(paste("out/", sp, "/" ,sp, ".model", sep = ""))
-  #model = readRDS(paste("out/", sp, "/" ,sp, ".bin", sep = ""))
-  prediction = terra::predict(object=prediction_data,
-                       model=model,
-                       fun=prediction_custom
-  )
-  
-  terra::writeRaster(prediction, paste("out/", sp, ".tif", sep = ""), overwrite=TRUE)
-  return(prediction)
-}
-```
-
-## ) Example model for species "Aglais_caschmirensis"
-
-Three different paramter sets used for Aglais_caschmirensis
-
-```{r Sample Aglais_caschmirensis 1}
-sp = "Aglais_caschmirensis"
-
-print(xgboost_params[2,])
-
-
-model <- train(modeling_data, sp, as.list(xgboost_params[2,]), save_model = FALSE)
-prediction <- predict(model, prediction_rstack)
-ggplot() + 
-  geom_spatraster(data = prediction) +
-  scale_fill_hypso_c(direction = -1,
-                     limits=c(0,1),
-                     name = "Prediction") +
-  geom_sf(data = modeling_data %>% filter(species == sp),
-          size = 1,
-          shape = 1 ) +
-  geom_sf(data = sf::st_as_sf(border_pak),
-          fill = NA, show.legend=FALSE) +
-   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan \n", paste("train_logloss:", mean(model[["evaluation_log"]][["train_logloss"]])), "\n params_index: 2"))
-
-rm(sp)
-```
-
-```{r Sample Aglais_caschmirensis 2}
-sp = "Aglais_caschmirensis"
-
-print(xgboost_params[4,])
-
-model <- train(modeling_data, sp, as.list(xgboost_params[4,]), save_model = FALSE)
-prediction <- predict(model, prediction_rstack)
-ggplot() + 
-  geom_spatraster(data = prediction) +
-  scale_fill_hypso_c(direction = -1,
-                     limits=c(0,1),
-                     name = "Prediction") +
-  geom_sf(data = modeling_data %>% filter(species == sp),
-          size = 1,
-          shape = 1 ) +
-  geom_sf(data = sf::st_as_sf(border_pak),
-          fill = NA, show.legend=FALSE) +
-   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan \n", paste("train_logloss:", mean(model[["evaluation_log"]][["train_logloss"]])), "\n params_index: 4"))
-
-rm(sp)
-```
-
-```{r Sample Aglais_caschmirensis 3}
-sp = "Aglais_caschmirensis"
-
-print(xgboost_params[5,])
-
-model <- train(modeling_data, sp, as.list(xgboost_params[5,]), save_model = FALSE)
-prediction <- predict(model, prediction_rstack)
-ggplot() + 
-  geom_spatraster(data = prediction) +
-  scale_fill_hypso_c(direction = -1,
-                     limits=c(0,1),
-                     name = "Prediction") +
-  geom_sf(data = modeling_data %>% filter(species == sp),
-          size = 1,
-          shape = 1 ) +
-  geom_sf(data = sf::st_as_sf(border_pak),
-          fill = NA, show.legend=FALSE) +
-   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan \n", paste("train_logloss:", mean(model[["evaluation_log"]][["train_logloss"]])), "\n params_index: 5"))
-
-rm(sp)
-```
 
 
 ```{r, inculde = FALSE, eval=FALSE}
@@ -577,24 +584,30 @@ Finally we combine all predicted species occurrence into a Map that indicates ho
 
 ```{r loop, message=TRUE, warning=FALSE, error=FALSE}
 
-time_start <- proc.time()
-i <- 0
+chunk_start <- proc.time()
 
 species = (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species
 
 # xgboost needs the output dir to exist before saving model
-system("mk out")
+system("mkdir out")
 
 for(sp in species)
 {
-  time_start_species <- proc.time()
-  i <- i+1
-  message(paste("[", i, "/", length(species), "] ", sp, ": ", sep = ""), appendLF=F)
+  loop_start <- proc.time()
   
-  # training and prediction of the species model
-  model <- train(modeling_data, sp, as.list(xgboost_params[5,]))
+  message("[", match(sp, species), "/", length(species), "] ", sp, ": ", appendLF=F)
+  
+  
+  
+  data <- modeling_data %>% filter(species == sp | is.na(species))
+
+  model <- train(data, nrounds = 10, save_model = FALSE)
+
   prediction <- predict(model, prediction_rstack)
   
+  
+  
+  terra::writeRaster(prediction, paste("out/", sp, ".tif", sep = ""), overwrite=TRUE)
   
   ggplot() + 
     geom_spatraster(data = prediction) +
@@ -609,10 +622,10 @@ for(sp in species)
     ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan \n", paste("train_logloss:", mean(model[["evaluation_log"]][["train_logloss"]]))))
   ggsave(paste(sp, ".png", sep=""), path="out")
 
-  message(paste("Exceution took", proc.time() - time_start_species, "seconds"))
+  message("Exceution took ", (proc.time() - loop_start)[3], " seconds")
 }
 
-message(paste("Total Exceution took", proc.time() - time_start, "seconds"))
+message("Total Exceution took", (proc.time() - chunk_start)[3], "seconds")
 ```
 
 ```{r species richness map}

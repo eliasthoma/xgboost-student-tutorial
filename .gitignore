@@ -57,3 +57,6 @@ data/
 
 # et1902: don't track model outputs since they will change every time
 out/
+
+# et1902: ignore temp knitting outputs 
+XGBoost_files/
