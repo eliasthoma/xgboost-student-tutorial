@@ -40,6 +40,7 @@ jobs:
       - name: Rename file 
         run: |
           mkdir www
+          mv images www/images
           mv XGBoost.html www/index.html
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v1
