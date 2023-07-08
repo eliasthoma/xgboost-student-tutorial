@@ -1,3 +1,26 @@
+# Hosting
+
+For serving this as a webpage you need to copy
+* xgboost.html
+* style.css
+* images/
+
+onto your webserver. Maybe you need to rename xgboost.html to index.html which should be no problem.
+
+# TODO
+* ecospat::boice ??
+* Metrics::auc ??
+* LogLoss gegen N_Samples plotten
+* Package Versionen im Text nennen
+* Link zu StatQuest einfügen
+* Paramter Set aufräumen und besser darstellen
+* Vergleich von GPU vs. CPU
+* Shap values darstellen und beschreiben
+* Dense/Sparse Matrix efficency erläutern
+* Test Daten
+* Caret oder Tidymodels als weiterführende Packete für Paramter Tuning
+* Explain logloss
+
 # Einbinden des Submodules in das eigene Git-Repository
 
 Eine git-bash im Ordner des Git-Repository öffnen und

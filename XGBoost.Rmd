@@ -1,137 +1,26 @@
 ---
 title: "Tutorial: Using XGBoost for Species-Distribution-Modelling"
+author: Elias Thoma, Noah Hahneiser
 output: 
   html_document:
     theme: united
-    numbered: TRUE
+    css: "style.css"
+#    numbered: TRUE
     number_section: TRUE
     toc: TRUE
-    toc_float: TRUE
+    toc_float:
+      collapsed: FALSE
 params:
-    subset_samples: TRUE
-    gpu_acc: FALSE
+    subset_samples: TRUE # PARAM subset_samples: used to select only two species for knitting, speeds up the process if you want a fast knit
+    gpu_acc: FALSE       # PARAM gpu_acc: XGBoost GPU accelaration requires special binaries to be installed, but speeds up training and !especially! prediction
 ---
 
-<style type="text/css">
- { /* Normal  */
-      
-  }
- body .main-container {
-        max-width: 2000px;
-        font-size: 16px;
-    }
-td {  /* Table  */
-  font-size: 9px;
-}
-h1.title {
-  font-size: 20px;
-  color: DarkRed;
-}
-h1 { /* Header 1 */
-  font-size: 18px;
-  color: DarkRed;
-}
-h2 { /* Header 2 */
-    font-size: 16px;
-  color: DarkRed;
-}
-h3 { /* Header 3 */
-  font-size: 14px;
-  font-family: "Times New Roman", Times, serif;
-  color: DarkBlue;
-}
-code.r{ /* Code block */
-    font-size: 14px;
-}
-pre { /* Code block - determines code spacing between lines */
-    font-size: 12px;
-}
-</style>
-
-<!-- style for image slider  -->
-<style>
-  * {box-sizing:border-box}
-
-/* Slideshow container */
-.slideshow-container {
-  max-width: 800px;
-  position: relative;
-  margin: auto;
-}
-
-/* Hide the images by default */
-.mySlides {
-  display: none;
-  padding: 0px 30px;
-}
-
-/* Next & previous buttons */
-.prev, .next {
-  cursor: pointer;
-  position: absolute;
-  top: 50%;
-  width: auto;
-  margin-top: -22px;
-  padding: 16px;
-  color: white;
-  font-weight: bold;
-  font-size: 18px;
-  transition: 0.6s ease;
-  border-radius: 0 3px 3px 0;
-  user-select: none;
-  background-color: rgba(0,0,0,0.8);
-}
-
-/* Position the "next button" to the right */
-.next {
-  right: 0;
-  border-radius: 3px 0 0 3px; 
-}
-
-/* On hover, add a black background color with a little bit see-through */
-.prev:hover, .next:hover {
-  background-color: rgba(0,0,0,0.8);
-}
-
-/* Caption text */
-.text_old {
-  color: #f2f2f2;
-  font-size: 15px;
-  padding: 8px 12px;
-  position: absolute;
-  bottom: 8px;
-  width: 100%;
-  text-align: center;
-}
-
-.text {
-  color: black;
-  font-size: 15px;
-  padding: 8px 12px;
-  width: 100%;
-  text-align: center;
-  min-height: 60px;
-}
-
-/* The dots/bullets/indicators */
-.dot {
-  cursor: pointer;
-  height: 15px;
-  width: 15px;
-  margin: 0 2px;
-  background-color: #bbb;
-  border-radius: 50%;
-  display: inline-block;
-  transition: background-color 0.6s ease;
-}
-
-.active, .dot:hover {
-  background-color: #717171;
-}
-</style>
-
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(results = "hold")
+knitr::opts_chunk$set(
+	fig.align = "center",
+	#cache = TRUE,
+	results = "hold"
+)
 ```
 
 ```{r notes, include=FALSE, eval=FALSE}
@@ -141,7 +30,6 @@ https://dieghernan.github.io/tidyterra/reference/geom_spatraster.html
 https://www.youtube.com/watch?v=gKyUucJwD8U&list=WL&index=71
 https://www.geeksforgeeks.org/xgboost/
 
-cbind: besser merge benutzen
 
 Interaktive Table:
 datatable(modeling_data)
@@ -164,44 +52,43 @@ Boosting combines weak learner (small trees) sequentually so that the new tree c
 To understand this we have to look into some mathematical details. But dont worry when using XGBoost these details will be automated. Nevertheless its importand to understand these processes to optimize the algorithm later on.
 
 
-## ) So how does it exactly work?
+# ) So how does it exactly work?
 
 As said XGBoost builds on many concepts to deliver it's often outstanding results.
 We're going to start with the mathematical base concepts of how XGBoost builds trees.
 
 In this assessment were trying to classify geo-points if they're potential habitats for a number of butterfly species. In order to do that we need XGBoost to build classification trees. XGBoost work's also with regression but the process differs a little, so were not going to focus on that.
 
-
 <!-- Slideshow container -->
 <div class="slideshow-container">
 
 <div class="mySlides">
-<img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhrAdT9U5a6js_clc19U2MySmViR5NAdMz5acOyTkolprWMt5-xYqLO8LgRgnCtHyt3UdKScfZtVNuoSkWNu8DfJe8aOeH4cxn1uWd7AarUOSMMOT5IPmMYegkyuxvN6qSBp26iFepdLY4FvCGs5XW9aO8rjT7tpsVNaotlPT0TcCWalyMXhddxZHwLxng/s1600/image1.jpeg" style="width:100%">  
+<img src="images/image1.jpeg" style="width:100%">  
 <div class="text">When building classification trees XGBoost evaluates each given point if a condition is met or not. In our case the green dots, with a value of one, represent the presence points. Red dots, with values of zero represent absence points. The black line in the middle is XGBoost's initial prediction. By default, it is 0.5, which means there is a 50% chance to find a butterfly at any given point.</div>
 </div>
 
 <div class="mySlides">
-<img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgDNS7NaU14obTeIdPoNMZGf3zl6y5PtL6RFqW4R9DpyQnJ08VoXx656ubQ4YYmn7SkdDI8TSyfnZtZeLmZ0rdd1gdsOn1vnVsmow7wsfptuMCMm7cxQyxHs6JVcdqhE7pMaJ6e6mP7abHtEkrnOelaK0oIBGpnWhpoEnldhUgK3EFyBqT_8JAyAYIDHg4/s1600/image2.jpeg" style="width:100%">
+<img src="images/image2.jpeg" style="width:100%">
 <div class="text">In the next step XGBoost calculates the residuals of all given points. The residuals are the difference between the observed prediction and the predictet. If the observed value is one (i.e., a presence point), the residuals are 0.5. The same applies to values of zero (i.e., absence points) where the residuals are -0.5.</div>
 </div>
 
 <div class="mySlides">
-<img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgRsgLPZq5EfK0nt-jMyi2dRi3dg0CXvEGYVaKdTCZuKMYVymUEGzV3dTlGZ8biZnw2nZuU64y6bQnEz2MzByxq_oc_KMakRqAqpSuAY8yNvqLS-eGfpLXLRGsFzeDMpGH20jEoejFqcOoL56z3uWfHI-h2-tLvnEPZgCxdjn8VQfCJGsCH7lVY3W1qWWg/s1600/image3.jpeg" style="width:100%">
+<img src="images/image3.jpeg" style="width:100%">
 <div class="text">In order to find the threshhold of parameters that influence the probability of a point being a presence or absence point the data has to be split at the crucial values of that parameter.</div>
 </div>
 
 <div class="mySlides">
-<img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjhM9-yn-gtedu2-iH4cr4yfeC4zVSV-vaXaPCNIL2ZTi1-UdAhdBtopQDIlPkeWj85zUpy5yVD9vMMn-M3wyTMUPcDplwORV6qGLA4SkLhPGsUlzy-YOOvyBUV40M330ReHUC-hVXpn5f0aZeCc2Fyeogfe51Ci8DIMI2qxM1LTqnsbVTWn2pFTIx0nqM/s1600/image4.jpeg" style="width:100%">
+<img src="images/image4.jpeg" style="width:100%">
 <div class="text">Therefore XGBoost splits the observations at thresholds that result in the highest gain value. But whats the gain-value?</div>
 </div>
 
 <div class="mySlides">
-<img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEg7R0oWdDQqkK6MXSD6zqchi27Fsun5UK2aal9TcArMU_jUCPJEh4VbxCa--ZxVHijWvU_y3vPmk87C9ToUjK856o3DpQCGDSG5fPkcs8GGRIfs3iUmtSgFzS2FVum_dFcvG5w9_OlfLd9DrCXI9Eh8MlSIQ4YIcF0_w6FwBHh9SCjIqq24xbrlV-w0Irg/s1600/image5.jpeg" style="width:100%">
+<img src="images/image5.jpeg" style="width:100%">
 <div class="text">To calculate the gain-value we need the similarity-score of each leaf and the root.</div>
 </div>
 
 <div class="mySlides">
-<img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhelYfzAkKKurpxMj1xCuwF0aLNWrJ2JSSqs5OFXNyxFNKfr8GXcNgDLHqAg8KnNfI3hDsviapqnKO5elMpnHAZLYGZNL-wEzMEL7LdT55k3F9aHajhAtxQc1JkcQNdeYh4601gcsCDbU1wmaokkadKOBPd347OEJHQFjNQcQ_qQV_cM2kXOZ3l3Z0VrCg/s1600/image6.jpeg" style="width:100%">
+<img src="images/image6.jpeg" style="width:100%">
 <div class="text">By summing the similarity-scores of the left and the right leaf and then substracting the similarity-score of the root we get the gain-value. In this case it's 3.8 and the highest possible for this dataset therefore this would be the final tree. But why doesn't XGBoost split the residuals any further? This has to do with regularization parameters and pruning wich we're going to explain in the next chapter.</div>
 </div>
 
@@ -254,45 +141,47 @@ function showSlides(n) {
 }
 </script>
 
-# ) Regularization & pruning
+## ) Regularization & pruning
 
 How XGBoost builds trees is limited by  multiple regularization parameters:
 
-## ) Lambda
+### ) Lambda
 
 We've heard of Lambda when we're calculated the similarity-score. XGBoost default value for Lambda is 0 therefore we've been ignoring it. But when Lambda is set to >0 the similarity-score get's smaller because the denominator becomes larger. Thus Lambda prevents over-fitting.
-```{r}
-#![Cover/min_child_weigth](https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhmPwBMb_KTLxryPlbQUksG13KoiKE97D-lH2vseNhSeeHv4M8Vrz8#yTG8lMvyF6EIWt5LFwxCUN9Fb1JqZwjJi0H_kiX5agdqr2_KSqKkuEN3C6ed0wAqqjp7-2nl310WWnxgfCObLfHxPWjNNyT01BIcK_GQcFjWlD4xA3CRZ2kL_iCRaQMU_KXC7zx8/s#1600/lambda.jpg)
+
+```{r, echo=FALSE, out.width = '10%'}
+knitr::include_graphics("images/lambda.jpg")
 ```
 
-```{r, echo=FALSE, out.width = '30%'}
-
-knitr::include_graphics("https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhmPwBMb_KTLxryPlbQUksG13KoiKE97D-lH2vseNhSeeHv4M8Vrz8yTG8lMvyF6EIWt5LFwxCUN9Fb1JqZwjJi0H_kiX5agdqr2_KSqKkuEN3C6ed0wAqqjp7-2nl310WWnxgfCObLfHxPWjNNyT01BIcK_GQcFjWlD4xA3CRZ2kL_iCRaQMU_KXC7zx8/s1600/lambda.jpg")
-```
-
-## ) Cover/min_child_weigth
+### ) Cover/min_child_weigth
 
 Another regularization parameter is the Cover or min_child_weight. This parameter is also the reason why we haven't continued building our example tree. In XGBoost the default value for the cover is 1 wich means that every leaf with a cover value less than 1 doesn't get build.
 The cover for classification tree's is calculated by summing the previous probability times 1 minus the previous probability, for each residual in the leaf.
 
-```{r, echo=FALSE, out.width = '100%'}
-
-knitr::include_graphics("https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgm8a-UAaRkFn0z90jWb4YuwIX6ExK1dE2yC_vOMmYls_BxTAdHKoHYfazNgYZwxzLCLhc3XMbyzOE63O3Azt8iEIcvBSxiLQfz40AkeL_OSDSeqY9BKrYAIg9IHG9hmANyurL1UxwmMSCMXNA5MS1fuG_Fzdf5_ynlX4bM4T8zdADbqh-nqZ1Vyk9QwpY/s1600/image7.jpg")
+```{r, echo=FALSE, out.width = '70%', fig.align="center"}
+knitr::include_graphics("images/image7.jpg")
 ```
 
-# ) Pruning
+### ) Gamma
 
 Similar to Cover (min_child_weigth) Gamma is a regularization parameter that causes XGBoost to only build new leafs when the Gain-Value is larger than Gamma. 
 
-```{r, echo=FALSE, out.width = '30%'}
-
-knitr::include_graphics("https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiaz4IyygAkr4KxI2BiVDzw2GjUT25tokUIU1BkwoSLWOz6A7Km_CnAImcm7cY_7gBPi3juIUEkYCNW2MI5NVnSPjqMxYp0C-mG1MlH-eI-BWwZXEK7sNhW9Ki87HYu0DZHIGTGafT6J7f7msh9uh7BjTMyX4rT9nKDsIzjpX5kv-Pusaz7nhkJAClafnE/s1600/gamma.jpg")
+```{r, echo=FALSE, out.width = '25%', fig.align="center"}
+knitr::include_graphics("images/gamma.jpg")
 ```
 
 Therefore it prevents overfitting the trees to our data. Gamma is a highly specialized regularization parameter, what mean's that there is no "good" value. By default it's 0 therefore no regularization takes place. 
 
 XGBoost substract's gamma from the Gain-Value and then removes the leaf if the result is a negative number.
 For example if we take the previous calculated Gain-Value of our example tree of 3.8 a gamma-value of 4 would prune the whole tree down to the root. But if the gamma-value is just 0 XGBoost can build extremly large trees thus overfitting the trees to the dataset and raising the computation time a lot.
+
+### ) Learning rate
+
+## ) Evaluation Metrics
+
+### ) Logloss
+
+### ) Importance / Shap values
 
 # ) Application of XGBoost in R
 
@@ -301,54 +190,51 @@ Docuementation is available here: https://xgboost.readthedocs.io/en/stable/
 
 ## ) Prerequisites
 
-Before you dive into the code you need to install some packages this script will use: 
+The XGBoost package can by installed in two different ways:
 
-```{r Install packages, eval=FALSE}
-install.packages("terra")
-install.packages("ggplot2")
-install.packages("fastDummies")
-install.packages("tidyterra")
+* First there is the default package from CRAN, which will do it in most situations.
+
+```{r XGBoost setup from CRAN, eval=FALSE}
+install.packages("xgboost")
 ```
 
-The XGBoost package can by installed in two different ways. First there is the default package from CRAN, which will do it in most situations.
-```{r Setup from CRAN, eval=F}
-#install.packages("xgboost")
-```
-But if you are dealing with large data sets you may want to use GPU acceleration. Therefor you have to use a prebuild package from GITHUB (https://github.com/dmlc/xgboost/releases). Download it, place it in the same folder as this script and run the commands below. For Benchmarks of a High-End CPU vs Low-End GPU, see https://medium.com/data-design/xgboost-gpu-performance-on-low-end-gpu-vs-high-end-cpu-a7bc5fcd425b. Risks? Reproducability?
+* But if you are dealing with large data sets you may want to use GPU acceleration. Therefor you have to use a prebuild package from GITHUB (https://github.com/dmlc/xgboost/releases). Download it, place it in the same folder as this script and run the commands below. 
+
+TODO: For Benchmarks of a High-End CPU vs Low-End GPU, see https://medium.com/data-design/xgboost-gpu-performance-on-low-end-gpu-vs-high-end-cpu-a7bc5fcd425b. Risks? Reproducability?
+
 ```{r Setup for GPU acceleration, eval=FALSE}
 ##
 ## !! Installation on windows failed with "Warning in system("sh ./configure.win") 'sh' not found", for dirty Solution see section Troubleshooting
 ##
 
-detach("package:xgboost")
-
 # Install dependencies
-system('R -q -e "install.packages(c(\'data.table\', \'jsonlite\'))"') # TODO: convert this to r code
+install.packages(c("data.table", "jsonlite"))
+
 # Install XGBoost
 system(paste("R CMD INSTALL ", getwd(),  "/xgboost_r_gpu_win64_21d95f3d8f23873a76f8afaad0fee5fa3e00eafe.tar.gz", sep=""))
 
-require(xgboost)
-
-params$gpu_acc = TRUE
 ```
+
+Don't forget to enable CPU acceleration in the knitting paramters.
 
 After installing all needed libaries you need to load them: 
 
 ```{r Loading libaries, results='hide', message=FALSE}
-# TODO: use this line:
-# if(!require(dplyr)){install.packages('dplyr')}
-
 require(dplyr)      # easy dataframe modification
 require(ggplot2)    # plotting
 
 require(geodata)    # downloading geospatial world dataset made easy
 require(sf)         # simple geospatial features
-require(terra)
+require(terra)      # raster manipulation
 
-require(tidyterra)  # plot terra object with ggplot
+require(tidyterra)  # plot terra objects with ggplot
 
-require(fastDummies)# create binary factor columns from character column
 require(xgboost)    # our modeling libary
+```
+
+
+```{r Set seed}
+set.seed("101")
 ```
 
 ## ) Data preparation
@@ -361,11 +247,14 @@ species_occurrences_all <- sf::st_as_sf(species_occurrences_all, coords=c("x", "
 
 str(species_occurrences_all)
 ```
-```{r, include=FALSE}
+
+
+```{r Subsetting species for development, include=FALSE}
+# PARAM subset_samples: 
 if(params$subset_samples)
 {
   species_names <- (species_occurrences_all %>% distinct(species))$species
-  species_occurrences_all = species_occurrences_all %>% filter(species %in% c("Aglais_caschmirensis", species_names[1]))
+  species_occurrences_all = species_occurrences_all %>% filter(species %in% c("Aglais_caschmirensis", species_names[1:25]))
   rm(species_names)
 }
 ```
@@ -376,7 +265,9 @@ ggplot() +
   ggtitle("Oberserved occurrence of butterflies in Pakistan")
 ```
 
-Next we need some environmental data to train the model. Therefor we selected the bioclim data, which are widely used in speceis distribution modeling (Source: https://isprs-archives.copernicus.org/articles/XLII-4-W19/449/2019/isprs-archives-XLII-4-W19-449-2019.pdf#:~:text=The%20earliest%20studies%20of%20SDM%20used%20BIOCLIM%20-,requires%20species%20occurrence%20data%20%28latitude%2C%20longitude%2C%20and%20elevation%29.). Bioclim is missing elevation data, we will use those too, since temperature is depend on elevation. The Border of Pakistan is also needed, we will crop our data with that, so the model doesn't train areas were does not have presence points.
+Next we need some environmental data to train the model. Therefor we selected the bioclim data, which are widely used in speceis distribution modeling (Source: https://isprs-archives.copernicus.org/articles/XLII-4-W19/449/2019/isprs-archives-XLII-4-W19-449-2019.pdf#:~:text=The%20earliest%20studies%20of%20SDM%20used%20BIOCLIM%20-,requires%20species%20occurrence%20data%20%28latitude%2C%20longitude%2C%20and%20elevation%29.). The Bioclim layers are missing elevation data, we will use those too, since temperature is dependent on elevation. The Border of Pakistan is also needed, we will crop our data with that, so the model doesn't train areas we don't not have presence points. The elevation data is alread cropped so we don't need to repeat this.
+
+Read more here https://www.worldclim.com/bioclim
 
 ```{r Loading environmental data, message=FALSE, warning=FALSE}
 # political border of pakistan
@@ -386,13 +277,33 @@ ggplot() +
 
 # bioclim data from pakistan
 bioclim_pak <- geodata::worldclim_country(country = "PAK", res = 10, var = "bio", path = "data/", version = "2.1")
-names(bioclim_pak) <- substr(names(bioclim_pak), 11, 20) # TODO: rename to mare meaningful names or show table of layers in text
+names(bioclim_pak) <- substr(names(bioclim_pak), 11, 20)
+
+
+#names(bioclim_pak) <- c("Annual Mean Temperature",
+#  "Mean Diurnal Range",
+#  "Isothermality",
+#  "Temperature Seasonality",
+#  "Max Temperature of Warmest Month",
+#  "Min Temperature of Coldest Month",
+#  "Temperature Annual Range",
+#  "Mean Temperature of Wettest Quarter",
+#  "Mean Temperature of Driest Quarter",
+#  "Mean Temperature of Warmest Quarter",
+#  "Mean Temperature of Coldest Quarter",
+#  "Annual Precipitation",
+#  "Precipitation of Wettest Month",
+#  "Precipitation of Driest Month",
+#  "Precipitation Seasonality",
+#  "Precipitation of Wettest Quarter",
+#  "Precipitation of Driest Quarter",
+#  "Precipitation of Warmest Quarter",
+#  "Precipitation of Coldest Quarter"
+#  )
+
 bioclim_pak <- terra::mask(bioclim_pak, border_pak)
-ggplot() + 
-  geom_spatraster(data = bioclim_pak) +
-  facet_wrap(~lyr) +
-  geom_sf(data = sf::st_as_sf(border_pak), fill = NA, show.legend = FALSE) + 
-  ggtitle("Bioclim data of Pakistan")
+
+plot(bioclim_pak)
 
 # elevation data form pakistan
 elevation_pak <- geodata::elevation_30s(country = 'PAK', path = 'data/')
@@ -406,6 +317,9 @@ So lets define our species_occurrences as presence points :
 
 ```{r presence points}
 species_presence <- species_occurrences_all
+# adding col presence to determine presence for model training
+species_presence <- cbind(species_presence, data.frame(presence = factor(1)))
+
 rm(species_occurrences_all)
 ```
 
@@ -417,25 +331,26 @@ As absence points we will user random Points in Pakistan and combine them with t
 border_pak <- sf::st_as_sf(border_pak)
 species_absence <- sf::st_sample(border_pak, size = 1000)
 
-# TODO: add col for occurrence = 1 or occurrence = 0 here, dummycols can then be thrown away
 # adding col species = NA to the background points, needed for rbind to join the data
+# adding col presence to determine absence for model training
 species_absence <- cbind(species_absence, data.frame(species = as.character(NA)))
+species_absence <- cbind(species_absence, data.frame(presence = factor(0)))
 species_absence <- sf::st_as_sf(species_absence)
 
 # Combine presence and absence (background) points into a single object
-modeling_data_ <- rbind(species_presence, species_absence)
+modeling_data <- rbind(species_presence, species_absence)
 
 # Only points inside Pakistan should be used for modeling, also remove the columns added by the intersection. 
-modeling_data_ <- sf::st_intersection(modeling_data_, border_pak) %>% select(-COUNTRY, -GID_0)
+modeling_data <- sf::st_intersection(modeling_data, border_pak) %>% select(-COUNTRY, -GID_0)
 ```
 
 Now we got our presence and absence points as spatial data. Finally we will extract values from our environmental data and add those to our modeling data, so xgboost can use this table to train its model.
 
 ```{r extract}
 # Extract values from bioclim and elevation, join them to our modeling_data
-extraction_bioclim_pak <- terra::extract(bioclim_pak, modeling_data_, bind=FALSE, ID=FALSE)
-extraction_elevation_pak <- terra::extract(elevation_pak, modeling_data_, bind=FALSE, ID=FALSE)
-modeling_data_extracted <- cbind( modeling_data_, extraction_bioclim_pak, extraction_elevation_pak)
+extraction_bioclim_pak <- terra::extract(bioclim_pak, modeling_data, bind=FALSE, ID=FALSE)
+extraction_elevation_pak <- terra::extract(elevation_pak, modeling_data, bind=FALSE, ID=FALSE)
+modeling_data_extracted <- cbind( modeling_data, extraction_bioclim_pak, extraction_elevation_pak)
 ```
 
 Clean up of no longer needed variables and check the final modeling data:
@@ -461,76 +376,243 @@ species_nsamples = data.frame(modeling_data) %>%
                     filter(!is.na(species))
 
 ggplot(species_nsamples, aes(n_samples)) +
-       geom_histogram(binwidth = 5) +
+       geom_histogram(binwidth = 4) +
        geom_vline(aes(xintercept=mean(n_samples)), linetype="dashed") +
        annotate(x=mean(species_nsamples$n_samples), y=+Inf, label=paste("Mean:",round(mean(species_nsamples$n_samples),2)), vjust=3, geom="label") +
        labs(x = "Number of Samples", y = "Number of Species")
 
 rm(species_nsamples)
 ```
+TODO it would be better to buffer the presence points and remove close absence points
+
 
 ## ) Training  and prediction with xgboost
 
 Starting with the training of our xgboost model we decided to do sperate training for every model. Despite that xgboost is capable of Multi-Classificiation. Therefor we defined a function 'train' wich invokes out data filtering and xgboost specific data preperation to meet the requirements of xgboost. Espacially converting the modeling data into a 'xgb.DMatrix' object. Finally we define some general parameters we want to use, e.g. enable of gpu acceleration by knit paramters. Last but not least we save the model to the disk to preserve it for modeling.
 
 
+https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.core
+DMatrix is an internal data structure that is used by XGBoost, which is optimized for both memory efficiency and training speed. You can construct DMatrix from multiple different sources of data.
+
 ```{r training function}
 train <- function(
     data, # training data, required
-    sp, # species name, required
-    xgb_params = list("nrounds" = 1000), # xgboost params, see https://xgboost.readthedocs.io/en/latest/parameter.html
+    nrounds,
+    xgb_params = list(), # xgboost params, see https://xgboost.readthedocs.io/en/latest/parameter.html
+    sp, # species name, only required if save_model = TRUE
     save_model = TRUE 
 ) {
-# filter modeling data to current species, don't forget the absence points!
-data <- modeling_data %>% filter(species == sp | is.na(species))
-data <- dummy_columns(data, select_columns = "species",
-                      ignore_na = TRUE, 
-                      remove_selected_columns = TRUE)
   
-# make dummy_columns name persistent over all species
-# replace NA values with 0
-data <- data %>% 
-  rename(species_occurrence = starts_with("species_")) %>%
-  mutate(species_occurrence = ifelse(is.na(species_occurrence), 0, species_occurrence)) %>%
-  mutate(species_occurrence = factor(species_occurrence))
+  # xgboost needs training data in a specific data format, which provides memory and speed optimization
+  data <- xgb.DMatrix(
+    data = as.matrix(as.data.frame(data) %>% select(-species, -presence, -geometry)), 
+    label = as.matrix(as.data.frame(data) %>% select(presence))
+  )
+  # PARAM gpu_acc:  
+  if(params$gpu_acc){ xgb_params = c(xgb_params, tree_method = "gpu_hist") }
+  else{ xgb_params = c(xgb_params, tree_method = "hist") }
+  xgb_params = c(xgb_params, objective = "binary:logistic") # logistic regression for binary classification, output probability
+  xgb_params = c(xgb_params, eval_metric = "auc")
   
-# xgboost need a specific data format  
-data <- xgb.DMatrix(
-  data = as.matrix(data %>% select(-species_occurrence, -geometry)), 
-  label = as.matrix(data %>% select(species_occurrence))  
-)
-
-# enable gpu acceleration only if wanted
-if(params$gpu_acc) {
-  xgb_params = c(xgb_params, predictor="gpu_predictor")
-  xgb_params = c(xgb_params, tree_method="gpu_hist")
-  xgb_params = c(xgb_params, sampling_method = "gradient_based")
-}
-#xgb_params = c(xgb_params, eval_metric="error") # Binary classification error rate. It is calculated as #(wrong cases)/#(all cases). For the predictions, the evaluation will regard the instances with prediction value larger than 0.5 as positive instances, and the others as negative instances.
-xgb_params = c(xgb_params, objective = "binary:logistic") # logistic regression for binary classification, output probability
-
-model <- xgboost(data = data,
-                 verbose = 0,            # 0 (silent), 1 (warning), 2 (info), 3 (debug)
-                 nrounds = xgb_params$nrounds,
-                 params = xgb_params
+  
+  model <- xgboost(data = data,
+                 nrounds = nrounds,
+                 params = xgb_params,
+                 verbose = 0
                  )
 
-message(paste("train_logloss:", mean(model[["evaluation_log"]][["train_logloss"]])))
+  message("avg train-auc:", as.numeric(mean(model[["evaluation_log"]][["train_auc"]])))
   
-if(save_model)
-{
-  xgb.save(model, paste("out/", sp, ".model", sep = ""))  # Max compatibility with future xgboost versions
-  save(model, file = paste("out/", sp, ".rds", sep = "")) # Fully restorable r object
-}
+  if(save_model)
+  {
+    xgb.save(model, paste("out/", sp, ".model", sep = ""))  # Max compatibility with future xgboost versions
+    #save(model, file = paste("out/", sp, ".rds", sep = "")) # Fully restorable r object
+  }
   
-return(model)
+  return(model)
 }
 ```
 
 Additional training paramters are defined here in a own data frame. Advantage of this are the comparability and useability of the different parameter sets. The Table show the default parameter, one set taken from Roozbeh Valavi et. al. And last the parameters we will user for training. Those have been tested and tuned manually.
 
 
-```{r training parameter}
+Next is to perpare data used to predic species occurrence in pakistan. Therefore we will use the raw raster data and predict of those with 'terra::predict' which allows us to pass on a 'Spatraster' object. XGBoost can't handle Spatraster, so 'terra:predict' allows as to define a custom prediction function, which converts data into a matrix.
+
+
+```{r prediction data}
+# gen stack from rasters bioclim_pak and elevation_pak
+elev_pak = resample(elevation_pak, bioclim_pak)
+ext(elevation_pak) <- ext(bioclim_pak)
+prediction_rstack = c(bioclim_pak, elev_pak)
+
+# Remove values outside pakistan, because otherwise the model will make predictions outside the modeling area
+prediction_rstack = terra::mask(prediction_rstack, border_pak)
+```
+
+
+```{r prediction function}
+# We need to make a custom predict function for terra::predict() since xgboost didn't take a data.frame as input. See https://stackoverflow.com/questions/71947124/predict-xgboost-model-onto-raster-stack-yields-error
+predict_custom <- function(model, data, ...) 
+{
+  stats::predict(model, newdata=as.matrix(data), ...)
+}
+
+
+
+predict <- function(model, # xgboost model as object
+                    prediction_data # prediction data as spatraster stack
+)
+{
+
+  #model = xgb.load(paste("out/", sp, "/" ,sp, ".model", sep = ""))
+  #model = readRDS(paste("out/", sp, "/" ,sp, ".bin", sep = ""))
+  prediction = terra::predict(object=prediction_data,
+                       model=model,
+                       fun=predict_custom
+  )
+  return(prediction)
+}
+```
+
+## ) Example model for species "Aglais_caschmirensis"
+
+Now we can train and predict our first species:
+
+```{r Sample Aglais_caschmirensis 1}
+sp = "Aglais_caschmirensis"
+
+#TODO
+# filter modeling data to current species, don't forget the absence points!
+data <- modeling_data %>% filter(species == sp | is.na(species))
+
+model <- train(data, nrounds = 10, save_model = FALSE)
+
+prediction <- predict(model, prediction_rstack)
+
+ggplot() + 
+  geom_spatraster(data = prediction) +
+  scale_fill_hypso_c(direction = -1,
+                     limits=c(0,1),
+                     name = "Prediction") +
+  geom_sf(data = modeling_data %>% filter(species == sp),
+          size = 1,
+          shape = 1 ) +
+  geom_sf(data = sf::st_as_sf(border_pak),
+          fill = NA, show.legend=FALSE) +
+  ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
+```
+
+Next we have on look on some metrics: 
+1. Cross Entropy Loss
+https://www.youtube.com/watch?v=Pwgpl9mKars
+As logloss is very high and the map
+
+
+
+3. Area under the Curve
+
+```{r}
+ggplot(model[["evaluation_log"]]) + 
+  geom_point(aes(x=iter,y=train_auc))
+```
+
+
+2. Shap values
+```{r shap values}
+xgb.ggplot.shap.summary(data = as.matrix(as.data.frame(modeling_data) %>% select(-species, -presence, -geometry)), model = model )
+rm(sp); rm(data); rm(model); rm(prediction)
+```
+
+
+
+
+Let's repeat this with improved parameters:
+nrounds = 100
+
+```{r echo=FALSE}
+sp = "Aglais_caschmirensis"
+
+# filter modeling data to current species, don't forget the absence points!
+data <- modeling_data %>% filter(species == sp | is.na(species))
+
+model <- train(data, nrounds = 100, save_model = FALSE)
+
+prediction <- predict(model, prediction_rstack)
+
+ggplot() + 
+  geom_spatraster(data = prediction) +
+  scale_fill_hypso_c(direction = -1,
+                     limits=c(0,1),
+                     name = "Prediction") +
+  geom_sf(data = modeling_data %>% filter(species == sp),
+          size = 1,
+          shape = 1 ) +
+  geom_sf(data = sf::st_as_sf(border_pak),
+          fill = NA, show.legend=FALSE) +
+   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
+
+ggplot(model[["evaluation_log"]]) + 
+  geom_point(aes(x=iter,y=train_auc))
+
+xgb.ggplot.shap.summary(data = as.matrix(as.data.frame(modeling_data) %>% select(-species, -presence, -geometry)), model = model )
+rm(sp); rm(data); rm(model); rm(prediction)
+```
+
+Overfitting!!
+Let's repeat this wiht improved parameters:
+nrounds = 1000
+
+Desrcibe Parameters
+
+
+
+
+```{r, echo=FALSE}
+sp = "Aglais_caschmirensis"
+
+# filter modeling data to current species, don't forget the absence points!
+data <- modeling_data %>% filter(species == sp | is.na(species))
+
+model <- train(data,
+               nrounds = 600, 
+               xgb_params = list(eta = 0.01,     # learning rate
+                                 max_depth = 8,  # 
+                                 gamma = 2,    # 
+                                 alpha = 0,      # 
+                                 lambda = 0.3,   #
+                                 min_child_weight = 2), 
+               save_model = FALSE)
+
+prediction <- predict(model, prediction_rstack)
+
+ggplot() + 
+  geom_spatraster(data = prediction) +
+  scale_fill_hypso_c(direction = -1,
+                     limits=c(0,1),
+                     name = "Prediction") +
+  geom_sf(data = modeling_data %>% filter(species == sp),
+          size = 1,
+          shape = 1 ) +
+  geom_sf(data = sf::st_as_sf(border_pak),
+          fill = NA, show.legend=FALSE) +
+  ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
+
+ggplot(model[["evaluation_log"]]) + 
+  geom_point(aes(x=iter,y=train_auc))
+
+xgb.ggplot.shap.summary(data = as.matrix(as.data.frame(modeling_data) %>% select(-species, -presence, -geometry)), model = model )
+rm(sp); rm(data); rm(model); rm(prediction)
+```
+
+
+### ) Tuning Parameters
+
+
+
+
+
+
+```{r training parameter, eval=F, include=F}
 rm(xgboost_params)
 
 xgboost_params <- data.frame("dataset" = character(), 
@@ -559,110 +641,6 @@ xgboost_params <- xgboost_params %>% add_row(dataset = "tuned 3", nrounds = 3000
 print(xgboost_params)
 ```
 
-Next is to perpare data used to predic species occurrence in pakistan. Therefore we will use the raw raster data and predict of those with 'terra::predict' which allows us to pass on a 'Spatraster' object. XGBoost can't handle Spatraster, so 'terra:predict' allows as to define a custom prediction function, which converts data into a matrix.
-
-```{r prediction data}
-# gen stack from rasters bioclim_pak and elevation_pak
-elev_pak = resample(elevation_pak, bioclim_pak)
-ext(elevation_pak) <- ext(bioclim_pak)
-prediction_rstack = c(bioclim_pak, elev_pak)
-
-# Remove values outside pakistan, because otherwise the model will make predictions outside the modeling area
-prediction_rstack = terra::mask(prediction_rstack, border_pak)
-```
-
-
-```{r prediction function}
-# We need to make a custom predict function for terra::predict() since xgboost didn't take a data.frame as input. See https://stackoverflow.com/questions/71947124/predict-xgboost-model-onto-raster-stack-yields-error
-prediction_custom <- function(model, data, ...) {
-  stats::predict(model, newdata=as.matrix(data), ...)
-}
-
-predict <- function(model, prediction_data, plots=FALSE)
-{
-
-  #model = xgb.load(paste("out/", sp, "/" ,sp, ".model", sep = ""))
-  #model = readRDS(paste("out/", sp, "/" ,sp, ".bin", sep = ""))
-  prediction = terra::predict(object=prediction_data,
-                       model=model,
-                       fun=prediction_custom
-  )
-  
-  terra::writeRaster(prediction, paste("out/", sp, ".tif", sep = ""), overwrite=TRUE)
-  return(prediction)
-}
-```
-
-## ) Example model for species "Aglais_caschmirensis"
-
-Three different paramter sets used for Aglais_caschmirensis
-
-```{r Sample Aglais_caschmirensis 1}
-sp = "Aglais_caschmirensis"
-
-print(xgboost_params[2,])
-
-
-model <- train(modeling_data, sp, as.list(xgboost_params[2,]), save_model = FALSE)
-prediction <- predict(model, prediction_rstack)
-ggplot() + 
-  geom_spatraster(data = prediction) +
-  scale_fill_hypso_c(direction = -1,
-                     limits=c(0,1),
-                     name = "Prediction") +
-  geom_sf(data = modeling_data %>% filter(species == sp),
-          size = 1,
-          shape = 1 ) +
-  geom_sf(data = sf::st_as_sf(border_pak),
-          fill = NA, show.legend=FALSE) +
-   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan \n", paste("train_logloss:", mean(model[["evaluation_log"]][["train_logloss"]])), "\n params_index: 2"))
-
-rm(sp)
-```
-
-```{r Sample Aglais_caschmirensis 2}
-sp = "Aglais_caschmirensis"
-
-print(xgboost_params[4,])
-
-model <- train(modeling_data, sp, as.list(xgboost_params[4,]), save_model = FALSE)
-prediction <- predict(model, prediction_rstack)
-ggplot() + 
-  geom_spatraster(data = prediction) +
-  scale_fill_hypso_c(direction = -1,
-                     limits=c(0,1),
-                     name = "Prediction") +
-  geom_sf(data = modeling_data %>% filter(species == sp),
-          size = 1,
-          shape = 1 ) +
-  geom_sf(data = sf::st_as_sf(border_pak),
-          fill = NA, show.legend=FALSE) +
-   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan \n", paste("train_logloss:", mean(model[["evaluation_log"]][["train_logloss"]])), "\n params_index: 4"))
-
-rm(sp)
-```
-
-```{r Sample Aglais_caschmirensis 3}
-sp = "Aglais_caschmirensis"
-
-print(xgboost_params[5,])
-
-model <- train(modeling_data, sp, as.list(xgboost_params[5,]), save_model = FALSE)
-prediction <- predict(model, prediction_rstack)
-ggplot() + 
-  geom_spatraster(data = prediction) +
-  scale_fill_hypso_c(direction = -1,
-                     limits=c(0,1),
-                     name = "Prediction") +
-  geom_sf(data = modeling_data %>% filter(species == sp),
-          size = 1,
-          shape = 1 ) +
-  geom_sf(data = sf::st_as_sf(border_pak),
-          fill = NA, show.legend=FALSE) +
-   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan \n", paste("train_logloss:", mean(model[["evaluation_log"]][["train_logloss"]])), "\n params_index: 5"))
-
-rm(sp)
-```
 
 
 ```{r, inculde = FALSE, eval=FALSE}
@@ -693,26 +671,48 @@ rm(sp)
 
 Finally we combine all predicted species occurrence into a Map that indicates how many species might occur in one pixel. First, we define a threshold above which the prediction should be considered. The prediction have been saved as tif in 'out/<species_name>.tif' and we need to load them before modifying. After that, we can reclassify the raster with 0 and 1, based on the threshold. To get the number of species in one pixel we need to sum up all rasters into one final raster and plot it using ggplot.
 
-```{r loop, message=TRUE, warning=FALSE, error=FALSE}
+```{r loop, message=T, warning=FALSE, error=FALSE}
+chunk_start <- proc.time()
 
-time_start <- proc.time()
-i <- 0
+rm(l_auc)
+l_auc <- data.frame(species = character(),
+                        auc = numeric())
+
 
 species = (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species
 
 # xgboost needs the output dir to exist before saving model
-system("mk out")
+dir.create(path="out")
 
 for(sp in species)
 {
-  time_start_species <- proc.time()
-  i <- i+1
-  message(paste("[", i, "/", length(species), "] ", sp, ": ", sep = ""), appendLF=F)
+  loop_start <- proc.time()
   
-  # training and prediction of the species model
-  model <- train(modeling_data, sp, as.list(xgboost_params[5,]))
+  message("[", match(sp, species), "/", length(species), "] ", sp, ": ", appendLF=F)
+  
+  
+  
+  data <- modeling_data %>% filter(species == sp | is.na(species))
+
+  model <- train(data, 
+                 nrounds = 2000,
+                 xgb_params = list(eta = 0.15, 
+                   max_depth = 8, 
+                   gamma = 1.5, 
+                   alpha = 0, 
+                   lambda = 0.7, 
+                   #tree_method = "gpu_hist",
+                   #predictor="gpu_predictor",
+                   min_child_weight = 1),
+                 save_model = FALSE)
+
   prediction <- predict(model, prediction_rstack)
   
+  
+  l_auc[nrow(l_auc) + 1,] = c(sp, as.numeric(mean(model[["evaluation_log"]][["train_auc"]])) )
+  
+  
+  terra::writeRaster(prediction, paste("out/", sp, ".tif", sep = ""), overwrite=TRUE)
   
   ggplot() + 
     geom_spatraster(data = prediction) +
@@ -724,21 +724,47 @@ for(sp in species)
             shape = 1 ) +
     geom_sf(data = sf::st_as_sf(border_pak),
             fill = NA, show.legend=FALSE) +
-    ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan \n", paste("train_logloss:", mean(model[["evaluation_log"]][["train_logloss"]]))))
+    ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
   ggsave(paste(sp, ".png", sep=""), path="out")
 
-  message(paste("Exceution took", proc.time() - time_start_species, "seconds"))
+  ggplot(model[["evaluation_log"]]) + 
+    geom_point(aes(x=iter,y=train_auc))
+  ggsave(paste(sp, "_log.png", sep=""), path="out")
+  
+  
+  message("\nExecution took ", (proc.time() - loop_start)[3], " seconds")
 }
 
-message(paste("Total Exceution took", proc.time() - time_start, "seconds"))
+message("Total Execution took ", (proc.time() - chunk_start)[3], " seconds")
+
+rm(chunk_start); rm(species); rm(data); rm(model); rm(prediction)
+```
+
+```{r}
+
+species_nsamples = data.frame(modeling_data) %>% 
+                    count(species, sort=TRUE) %>% 
+                    rename(n_samples = n) %>% 
+                    filter(!is.na(species))
+
+N_auc <- merge(l_auc, species_nsamples, by="species")
+N_auc$auc = as.numeric(N_auc$auc)
+
+ggplot(N_auc, aes(x = n_samples, y = auc)) +
+  geom_point() + 
+  #ylim(0,1) +
+  geom_smooth()  
+#geom_smooth(aes(colour = "Interpolation"))
+
+#TODO: overall performance: mean of logloss  
 ```
 
 ```{r species richness map}
 # Step 1  generate Raster Stack
 # l_species will consist of all 421 species prediction rasters -> RAM usage will be insane ~ 25GB
-l_species = list()
+l_species <- list()
 
-threshold = 0.5
+threshold <- 0.5
 
 # reclassify raster:
 # value < threshold = 0
@@ -778,7 +804,16 @@ For how many species is no prediction made?
 
 # ) Conclusion
 
+
+* Investigate which Predictors have been used most
+* Use Automated tuning to find the best parameters
+* 
+
 # ) Sources
+
+Silge, J.(2021): Use racing methods to tune xgboost models and predict home runs. <https://juliasilge.com/blog/baseball-racing/> (last visited 07.07.2023)
+
+
 
 # ) Troubleshooting
 

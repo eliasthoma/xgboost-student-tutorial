@@ -49,11 +49,14 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 
+# -------------------------------------------------------
+# custom rules start here
+
 # et1902: Don't track download data of terra::geodata
 data/
 
-# et1902: Ignore rmarkdown html since it will be produced by the github action
-*.html
-
 # et1902: don't track model outputs since they will change every time
 out/
+
+# et1902: ignore temp knitting outputs 
+XGBoost_files/
