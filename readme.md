@@ -1,3 +1,12 @@
+# Hosting
+
+For serving this as a webpage you need to copy
+* xgboost.html
+* style.css
+* images/
+
+onto your webserver. Maybe you need to rename xgboost.html to index.html which should be no problem.
+
 # TODO
 * ecospat::boice ??
 * Metrics::auc ??
