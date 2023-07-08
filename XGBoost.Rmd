@@ -16,8 +16,11 @@ params:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(results = "hold")
-knitr::opts_chunk$set(fig.align = "center")
+knitr::opts_chunk$set(
+	fig.align = "center",
+	#cache = TRUE,
+	results = "hold"
+)
 ```
 
 ```{r notes, include=FALSE, eval=FALSE}
@@ -159,7 +162,7 @@ The cover for classification tree's is calculated by summing the previous probab
 knitr::include_graphics("images/image7.jpg")
 ```
 
-## ) Pruning
+### ) Gamma
 
 Similar to Cover (min_child_weigth) Gamma is a regularization parameter that causes XGBoost to only build new leafs when the Gain-Value is larger than Gamma. 
 
@@ -172,6 +175,14 @@ Therefore it prevents overfitting the trees to our data. Gamma is a highly speci
 XGBoost substract's gamma from the Gain-Value and then removes the leaf if the result is a negative number.
 For example if we take the previous calculated Gain-Value of our example tree of 3.8 a gamma-value of 4 would prune the whole tree down to the root. But if the gamma-value is just 0 XGBoost can build extremly large trees thus overfitting the trees to the dataset and raising the computation time a lot.
 
+### ) Learning rate
+
+## ) Evaluation Metrics
+
+### ) Logloss
+
+### ) Importance / Shap values
+
 # ) Application of XGBoost in R
 
 XGBoost is available for different programming and scripting languages, include Python, R, Java and C++. 
@@ -179,16 +190,8 @@ Docuementation is available here: https://xgboost.readthedocs.io/en/stable/
 
 ## ) Prerequisites
 
-Before you dive into the code you need to install some packages this script will use: 
-
-```{r Install depencies, eval=FALSE}
-install.packages("terra")
-install.packages("ggplot2")
-install.packages("fastDummies")
-install.packages("tidyterra")
-```
-
 The XGBoost package can by installed in two different ways:
+
 * First there is the default package from CRAN, which will do it in most situations.
 
 ```{r XGBoost setup from CRAN, eval=FALSE}
@@ -226,15 +229,13 @@ require(terra)      # raster manipulation
 
 require(tidyterra)  # plot terra objects with ggplot
 
-require(fastDummies)# create binary factor columns from character column
 require(xgboost)    # our modeling libary
 ```
+
 
 ```{r Set seed}
 set.seed("101")
 ```
-
-
 
 ## ) Data preparation
 
@@ -253,7 +254,7 @@ str(species_occurrences_all)
 if(params$subset_samples)
 {
   species_names <- (species_occurrences_all %>% distinct(species))$species
-  species_occurrences_all = species_occurrences_all %>% filter(species %in% c("Aglais_caschmirensis", species_names[1]))
+  species_occurrences_all = species_occurrences_all %>% filter(species %in% c("Aglais_caschmirensis", species_names[1:25]))
   rm(species_names)
 }
 ```
@@ -393,20 +394,6 @@ Starting with the training of our xgboost model we decided to do sperate trainin
 https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.core
 DMatrix is an internal data structure that is used by XGBoost, which is optimized for both memory efficiency and training speed. You can construct DMatrix from multiple different sources of data.
 
-
-# enable gpu acceleration only if wanted
-if(params$gpu_acc) {
-  xgb_params = c(xgb_params, predictor="gpu_predictor")
-  xgb_params = c(xgb_params, tree_method="gpu_hist")
-  xgb_params = c(xgb_params, sampling_method = "gradient_based")
-}
-#xgb_params = c(xgb_params, eval_metric="error") # Binary classification error rate. It is calculated as #(wrong cases)/#(all cases). For the predictions, the evaluation will regard the instances with prediction value larger than 0.5 as positive instances, and the others as negative instances.
-
-
-# we want to use binary classification with logistic regression, which outputs a probability
-
-
-
 ```{r training function}
 train <- function(
     data, # training data, required
@@ -421,16 +408,20 @@ train <- function(
     data = as.matrix(as.data.frame(data) %>% select(-species, -presence, -geometry)), 
     label = as.matrix(as.data.frame(data) %>% select(presence))
   )
-
+  # PARAM gpu_acc:  
+  if(params$gpu_acc){ xgb_params = c(xgb_params, tree_method = "gpu_hist") }
+  else{ xgb_params = c(xgb_params, tree_method = "hist") }
   xgb_params = c(xgb_params, objective = "binary:logistic") # logistic regression for binary classification, output probability
-
+  xgb_params = c(xgb_params, eval_metric = "auc")
+  
+  
   model <- xgboost(data = data,
                  nrounds = nrounds,
                  params = xgb_params,
                  verbose = 0
                  )
 
-  message(paste("avg train-logloss:", mean(model[["evaluation_log"]][["train_logloss"]])))
+  message("avg train-auc:", as.numeric(mean(model[["evaluation_log"]][["train_auc"]])))
   
   if(save_model)
   {
@@ -443,6 +434,9 @@ train <- function(
 ```
 
 Additional training paramters are defined here in a own data frame. Advantage of this are the comparability and useability of the different parameter sets. The Table show the default parameter, one set taken from Roozbeh Valavi et. al. And last the parameters we will user for training. Those have been tested and tuned manually.
+
+
+Next is to perpare data used to predic species occurrence in pakistan. Therefore we will use the raw raster data and predict of those with 'terra::predict' which allows us to pass on a 'Spatraster' object. XGBoost can't handle Spatraster, so 'terra:predict' allows as to define a custom prediction function, which converts data into a matrix.
 
 
 ```{r prediction data}
@@ -505,12 +499,25 @@ ggplot() +
           shape = 1 ) +
   geom_sf(data = sf::st_as_sf(border_pak),
           fill = NA, show.legend=FALSE) +
-   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan", "\ntrain-logloss:", mean(model[["evaluation_log"]][["train_logloss"]])))
+  ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
 ```
 
+Next we have on look on some metrics: 
+1. Cross Entropy Loss
+https://www.youtube.com/watch?v=Pwgpl9mKars
 As logloss is very high and the map
 
 
+
+3. Area under the Curve
+
+```{r}
+ggplot(model[["evaluation_log"]]) + 
+  geom_point(aes(x=iter,y=train_auc))
+```
+
+
+2. Shap values
 ```{r shap values}
 xgb.ggplot.shap.summary(data = as.matrix(as.data.frame(modeling_data) %>% select(-species, -presence, -geometry)), model = model )
 rm(sp); rm(data); rm(model); rm(prediction)
@@ -519,7 +526,7 @@ rm(sp); rm(data); rm(model); rm(prediction)
 
 
 
-Let's repeat this wiht improved parameters:
+Let's repeat this with improved parameters:
 nrounds = 100
 
 ```{r echo=FALSE}
@@ -542,38 +549,10 @@ ggplot() +
           shape = 1 ) +
   geom_sf(data = sf::st_as_sf(border_pak),
           fill = NA, show.legend=FALSE) +
-   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan", "\ntrain-logloss:", mean(model[["evaluation_log"]][["train_logloss"]])))
+   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
 
-xgb.ggplot.shap.summary(data = as.matrix(as.data.frame(modeling_data) %>% select(-species, -presence, -geometry)), model = model )
-rm(sp); rm(data); rm(model); rm(prediction)
-```
-
-
-
-Let's repeat this wiht improved parameters:
-nrounds = 1000
-
-```{r, echo=FALSE}
-sp = "Aglais_caschmirensis"
-
-# filter modeling data to current species, don't forget the absence points!
-data <- modeling_data %>% filter(species == sp | is.na(species))
-
-model <- train(data, nrounds = 1000, save_model = FALSE)
-
-prediction <- predict(model, prediction_rstack)
-
-ggplot() + 
-  geom_spatraster(data = prediction) +
-  scale_fill_hypso_c(direction = -1,
-                     limits=c(0,1),
-                     name = "Prediction") +
-  geom_sf(data = modeling_data %>% filter(species == sp),
-          size = 1,
-          shape = 1 ) +
-  geom_sf(data = sf::st_as_sf(border_pak),
-          fill = NA, show.legend=FALSE) +
-   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan", "\ntrain-logloss:", mean(model[["evaluation_log"]][["train_logloss"]])))
+ggplot(model[["evaluation_log"]]) + 
+  geom_point(aes(x=iter,y=train_auc))
 
 xgb.ggplot.shap.summary(data = as.matrix(as.data.frame(modeling_data) %>% select(-species, -presence, -geometry)), model = model )
 rm(sp); rm(data); rm(model); rm(prediction)
@@ -583,6 +562,11 @@ Overfitting!!
 Let's repeat this wiht improved parameters:
 nrounds = 1000
 
+Desrcibe Parameters
+
+
+
+
 ```{r, echo=FALSE}
 sp = "Aglais_caschmirensis"
 
@@ -590,13 +574,13 @@ sp = "Aglais_caschmirensis"
 data <- modeling_data %>% filter(species == sp | is.na(species))
 
 model <- train(data,
-               nrounds = 2000, 
-               xgb_params = list(eta = 0.15, 
-                                 max_depth = 10, 
-                                 gamma = 1.5, 
-                                 alpha = 0, 
-                                 lambda = 0.7, 
-                                 min_child_weight = 1), 
+               nrounds = 600, 
+               xgb_params = list(eta = 0.01,     # learning rate
+                                 max_depth = 8,  # 
+                                 gamma = 2,    # 
+                                 alpha = 0,      # 
+                                 lambda = 0.3,   #
+                                 min_child_weight = 2), 
                save_model = FALSE)
 
 prediction <- predict(model, prediction_rstack)
@@ -611,12 +595,17 @@ ggplot() +
           shape = 1 ) +
   geom_sf(data = sf::st_as_sf(border_pak),
           fill = NA, show.legend=FALSE) +
-   ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan", "\ntrain-logloss:", mean(model[["evaluation_log"]][["train_logloss"]])))
+  ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
+
+ggplot(model[["evaluation_log"]]) + 
+  geom_point(aes(x=iter,y=train_auc))
 
 xgb.ggplot.shap.summary(data = as.matrix(as.data.frame(modeling_data) %>% select(-species, -presence, -geometry)), model = model )
 rm(sp); rm(data); rm(model); rm(prediction)
 ```
 
+
+### ) Tuning Parameters
 
 
 
@@ -652,9 +641,6 @@ xgboost_params <- xgboost_params %>% add_row(dataset = "tuned 3", nrounds = 3000
 print(xgboost_params)
 ```
 
-Next is to perpare data used to predic species occurrence in pakistan. Therefore we will use the raw raster data and predict of those with 'terra::predict' which allows us to pass on a 'Spatraster' object. XGBoost can't handle Spatraster, so 'terra:predict' allows as to define a custom prediction function, which converts data into a matrix.
-
-
 
 
 ```{r, inculde = FALSE, eval=FALSE}
@@ -685,18 +671,18 @@ Next is to perpare data used to predic species occurrence in pakistan. Therefore
 
 Finally we combine all predicted species occurrence into a Map that indicates how many species might occur in one pixel. First, we define a threshold above which the prediction should be considered. The prediction have been saved as tif in 'out/<species_name>.tif' and we need to load them before modifying. After that, we can reclassify the raster with 0 and 1, based on the threshold. To get the number of species in one pixel we need to sum up all rasters into one final raster and plot it using ggplot.
 
-```{r loop, message=F, warning=FALSE, error=FALSE}
+```{r loop, message=T, warning=FALSE, error=FALSE}
 chunk_start <- proc.time()
 
-rm(l_logloss)
-l_logloss <- data.frame(species = character(),
-                        logloss = numeric())
+rm(l_auc)
+l_auc <- data.frame(species = character(),
+                        auc = numeric())
 
 
 species = (modeling_data %>% distinct(species) %>% filter(!is.na(species)))$species
 
 # xgboost needs the output dir to exist before saving model
-system("mkdir out")
+dir.create(path="out")
 
 for(sp in species)
 {
@@ -709,21 +695,21 @@ for(sp in species)
   data <- modeling_data %>% filter(species == sp | is.na(species))
 
   model <- train(data, 
-                 nrounds = 10,
+                 nrounds = 2000,
                  xgb_params = list(eta = 0.15, 
-                   max_depth = 10, 
+                   max_depth = 8, 
                    gamma = 1.5, 
                    alpha = 0, 
                    lambda = 0.7, 
-                   min_child_weight = 1,
-                   tree_method = "gpu_hist",
-                   predictor="gpu_predictor"),
+                   #tree_method = "gpu_hist",
+                   #predictor="gpu_predictor",
+                   min_child_weight = 1),
                  save_model = FALSE)
 
   prediction <- predict(model, prediction_rstack)
   
   
-  l_logloss[nrow(l_logloss) + 1,] = c(sp, as.numeric(model[["evaluation_log"]][["train_logloss"]]) )
+  l_auc[nrow(l_auc) + 1,] = c(sp, as.numeric(mean(model[["evaluation_log"]][["train_auc"]])) )
   
   
   terra::writeRaster(prediction, paste("out/", sp, ".tif", sep = ""), overwrite=TRUE)
@@ -738,10 +724,12 @@ for(sp in species)
             shape = 1 ) +
     geom_sf(data = sf::st_as_sf(border_pak),
             fill = NA, show.legend=FALSE) +
-    ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan", paste("\ntrain_logloss:", as.numeric(mean(model[["evaluation_log"]][["train_logloss"]])))))
+    ggtitle(paste("Oberserved and predicted occurrence of", sp, "in pakistan"))
   ggsave(paste(sp, ".png", sep=""), path="out")
 
-  
+  ggplot(model[["evaluation_log"]]) + 
+    geom_point(aes(x=iter,y=train_auc))
+  ggsave(paste(sp, "_log.png", sep=""), path="out")
   
   
   message("\nExecution took ", (proc.time() - loop_start)[3], " seconds")
@@ -759,13 +747,14 @@ species_nsamples = data.frame(modeling_data) %>%
                     rename(n_samples = n) %>% 
                     filter(!is.na(species))
 
+N_auc <- merge(l_auc, species_nsamples, by="species")
+N_auc$auc = as.numeric(N_auc$auc)
 
-
-x <- merge(l_logloss, species_nsamples, by="species")
-x$logloss = as.numeric(x$logloss)
-
-ggplot(x, aes(x = n_samples, y = logloss)) +
-  geom_point() #+ ylim(0,1)
+ggplot(N_auc, aes(x = n_samples, y = auc)) +
+  geom_point() + 
+  #ylim(0,1) +
+  geom_smooth()  
+#geom_smooth(aes(colour = "Interpolation"))
 
 #TODO: overall performance: mean of logloss  
 ```
@@ -815,7 +804,16 @@ For how many species is no prediction made?
 
 # ) Conclusion
 
+
+* Investigate which Predictors have been used most
+* Use Automated tuning to find the best parameters
+* 
+
 # ) Sources
+
+Silge, J.(2021): Use racing methods to tune xgboost models and predict home runs. <https://juliasilge.com/blog/baseball-racing/> (last visited 07.07.2023)
+
+
 
 # ) Troubleshooting
 
