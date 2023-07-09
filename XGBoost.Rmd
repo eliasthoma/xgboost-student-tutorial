@@ -180,13 +180,13 @@ For example if we take the previous calculated Gain-Value of our example tree of
 
 When the first tree is built, the output value of each leaf is calculated by dividing the sum of the residuals of a leaf by the previous prediction times 1 minus the previous prediction (for each residual) plus lambda.
 
-```{r, echo=FALSE, out.width = '25%', fig.align="center"}
+```{r, echo=FALSE, out.width = '50%', fig.align="center"}
 knitr::include_graphics("images/output.jpg")
 ```
 
 For the leaf containing the residuals of our presence points, it would look like this:
 
-```{r, echo=FALSE, out.width = '25%', fig.align="center"}
+```{r, echo=FALSE, out.width = '50%', fig.align="center"}
 knitr::include_graphics("images/output_leaf.jpg")
 ```
 
@@ -794,7 +794,7 @@ Silge, J.(2021): Use racing methods to tune xgboost models and predict home runs
 
 **Installing XGBoost with GPU accerlation**
 
-Pre-built binary packages are offered by XGBoost after someone makes a request on GitHub (https://github.com/dmlc/xgboost/issues/6654). Since the packages are precompiled, it should not be necessary to compile them from source. The installation still fails with error `` `r knitr::inline_expr("Warning in system('sh ./configure.win') 'sh' not found")` ``. So there are two ways to fix this problem:
+Pre-built binary packages are offered by XGBoost after someone made a request on GitHub (https://github.com/dmlc/xgboost/issues/6654). Since the packages are precompiled, it should not be necessary to compile them from source. The installation still fails with error `` `r knitr::inline_expr("Warning in system('sh ./configure.win') 'sh' not found")` ``. So there are two ways to fix this problem:
 - Install R-Tools and build from source
 - Copy src/xgboost.dll from archive (https://github.com/dmlc/xgboost/releases) into your r library manually e.g C:\Users\%USERNAME%\AppData\Local\R\win-library\4.2\xgboost\libs\x64
 
