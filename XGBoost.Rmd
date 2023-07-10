@@ -756,7 +756,7 @@ stack = terra::mask(stack, border_pak)
 
 ggplot() + 
   geom_spatraster(data = stack) +
-  scale_fill_hypso_c(name="N° of species" ) +
+  scale_fill_hypso_c(palette="c3t1", name="N° of species" ) +
   #scale_fill_hypso_b(name="N° of species") +
   geom_sf(data = sf::st_as_sf(border_pak), fill=NA, show.legend=FALSE) +
   ggtitle("Species richness of butterflies in Pakistan")
